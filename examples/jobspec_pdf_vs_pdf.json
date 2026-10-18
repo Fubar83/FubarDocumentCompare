@@ -1,0 +1,7 @@
+{
+  "schema": "printcmp.jobspec/1",
+  "reference": { "path": "etikett_v2.pdf" },
+  "sample": { "path": "etikett_v3.pdf" },
+  "work_dpi": 600,
+  "outputs": { "dir": "out_pdf" }
+}
