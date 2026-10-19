@@ -24,7 +24,8 @@ from printcmp import jobspec, pipeline  # noqa: E402
 
 
 CLASS_OK = {
-    "char_change": {"Changed", "Shape"},
+    "char_change": {"Changed", "Shape", "Moved"},      # bredare/smalare tecken flyttar resten av raden
+    "outlined_change": {"Changed", "Shape", "Moved"},
     "diacritic": {"Changed", "Missing", "Shape"},
     "word_delete": {"Missing", "Changed", "Moved"},
     "append_text": {"Added", "Changed"},
@@ -33,6 +34,10 @@ CLASS_OK = {
     "delete": {"Missing"},
     "color_shift": {"Color"},
     "barcode_digit": {"Barcode"},
+    "cell_value": {"Changed", "Shape"},
+    "rule_delete": {"Missing"},
+    "row_shift": {"Moved"},
+    "braille_char": {"Braille"},
 }
 
 
@@ -80,6 +85,24 @@ def _near_fold(box, lines, band):
     return False
 
 
+def category_ok(t: dict, d: dict) -> bool:
+    """Rätt objektkategori (och tabellcell/-linje) för en träff."""
+    c = t["category"]
+    ti = d.get("table") or {}
+    if c == "TableCell":
+        if ti.get("element") != "cell":
+            return False
+        r, col = t["table_cell"]
+        return ti.get("row") == r and (col is None or ti.get("col") in (col, None))
+    if c == "TableRule":
+        return ti.get("element") == "rule" and ti.get("position") == t.get("table_rule")
+    if c == "OutlinedText":
+        return d.get("category") == "OutlinedText" and d.get("severity") in ("Major", "Critical")
+    if c == "Braille":
+        return d.get("kind") == "Braille"
+    return d.get("category") == c
+
+
 def homography_rms(H_res, H_truth, w, h, n=8):
     xs, ys = np.meshgrid(np.linspace(0, w, n), np.linspace(0, h, n))
     P = np.stack([xs.ravel(), ys.ravel(), np.ones(n * n)], 1)
@@ -118,14 +141,16 @@ def evaluate_case(result: dict, truth: dict) -> dict:
         for ri in d["instances"]:
             if ri in inst_map:
                 dets.append({"inst": inst_map[ri], "box": d["bbox_mm"], "kind": d["kind"],
-                             "systematic": bool(d.get("systematic")), "id": d["id"], "severity": d["severity"]})
+                             "systematic": bool(d.get("systematic")), "id": d["id"], "severity": d["severity"],
+                             "d": d})
     truths = []
     for t in truth["defects"]:
         insts = t_instances if t["systematic"] else t["instances"]
         for ti in insts:
             truths.append({"inst": ti, "box": t["bbox_ref_mm"], "kind": t["kind"], "accept": t["accept"],
                            "systematic": t["systematic"], "id": t["id"], "mutation": t.get("mutation"),
-                           "origin": "artwork" if t["systematic"] else "print"})
+                           "origin": "artwork" if t["systematic"] else "print", "category": t.get("category"),
+                           "table_cell": t.get("table_cell"), "table_rule": t.get("table_rule")})
 
     per_inst_hits = []
     fa, uncertain_ok, uncertain_extra = [], 0, 0
@@ -166,6 +191,9 @@ def evaluate_case(result: dict, truth: dict) -> dict:
     by_origin = defaultdict(lambda: [0, 0])
     by_mut = defaultdict(lambda: [0, 0])
     cls_ok = cls_n = sys_ok = sys_n = 0
+    cls_misses = []
+    by_cat = defaultdict(lambda: [0, 0])
+    cat_misses = []
     misses = []
     for t, d in per_inst_hits:
         hit = d is not None and d["kind"] != "Uncertain"
@@ -176,9 +204,19 @@ def evaluate_case(result: dict, truth: dict) -> dict:
             by_mut[t["mutation"]][0] += 1
             if t["origin"] == "artwork":
                 cls_n += 1
-                cls_ok += int(d["kind"] in CLASS_OK.get(t["mutation"], {t["kind"]}))
+                ok_c = d["kind"] in CLASS_OK.get(t["mutation"], {t["kind"]})
+                cls_ok += int(ok_c)
+                if not ok_c:
+                    cls_misses.append({"id": t["id"], "mutation": t["mutation"], "got": d["kind"]})
             sys_n += 1
             sys_ok += int(d["systematic"] == t["systematic"])
+            if t.get("category"):
+                ok = category_ok(t, d["d"])
+                by_cat[t["category"]][1] += 1
+                by_cat[t["category"]][0] += int(ok)
+                if not ok:
+                    cat_misses.append({"id": t["id"], "category": t["category"], "got": d["d"].get("category"),
+                                       "table": d["d"].get("table"), "kind": d["kind"]})
         else:
             misses.append({"id": t["id"], "inst": t["inst"], "mutation": t["mutation"], "box": t["box"],
                            "got": None if d is None else d["kind"]})
@@ -198,6 +236,9 @@ def evaluate_case(result: dict, truth: dict) -> dict:
         "uncertain_ok": uncertain_ok,
         "uncertain_extra": uncertain_extra,
         "class_ok": [cls_ok, cls_n],
+        "class_misses": cls_misses,
+        "category_ok": {k: v for k, v in by_cat.items()},
+        "category_misses": cat_misses[:20],
         "systematic_ok": [sys_ok, sys_n],
         "misses": misses,
         "false_alarm_list": [{"id": d["id"], "inst": d["inst"], "kind": d["kind"],
@@ -219,10 +260,14 @@ def aggregate(results: list[dict]) -> dict:
         return {"hit": a, "total": b, "rate": (a / b) if b else None}
 
     muts = defaultdict(lambda: [0, 0])
+    cats = defaultdict(lambda: [0, 0])
     for r in results:
         for k, (a, b) in r["recall_by_mutation"].items():
             muts[k][0] += a
             muts[k][1] += b
+        for k, (a, b) in r.get("category_ok", {}).items():
+            cats[k][0] += a
+            cats[k][1] += b
     labels = sum(r["instances_expected"] for r in results)
     reg = [r["registration_rms_px"] for r in results if r["registration_rms_px"] is not None]
     return {
@@ -237,6 +282,7 @@ def aggregate(results: list[dict]) -> dict:
         "uncertain_extra_per_label": sum(r["uncertain_extra"] for r in results) / max(1, labels),
         "registration_rms_px_mean": float(np.mean(reg)) if reg else None,
         "recall_by_mutation": {k: {"hit": a, "total": b, "rate": a / b if b else None} for k, (a, b) in sorted(muts.items())},
+        "category": {k: {"hit": a, "total": b, "rate": a / b if b else None} for k, (a, b) in sorted(cats.items())},
     }
 
 

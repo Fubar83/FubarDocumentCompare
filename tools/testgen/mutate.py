@@ -10,7 +10,10 @@ import copy
 
 import numpy as np
 
-from .labelpdf import char_bbox_mm, element_bbox_mm, text_width_mm
+from printcmp import braille as brl
+
+from .labelpdf import (braille_cell_bbox_mm, cell_text_bbox_mm, char_bbox_mm, element_bbox_mm, rule_bbox_mm,
+                       table_layout, text_width_mm)
 
 LOOKALIKE = {
     "O": "0", "0": "O", "o": "e", "e": "c", "c": "o", "l": "1", "1": "l", "I": "l", "i": "j", "a": "o",
@@ -29,7 +32,15 @@ def _union(a, b):
 
 
 def _texts(spec):
-    return [e for e in spec["elements"] if e["type"] == "text"]
+    return [e for e in spec["elements"] if e["type"] in ("text", "outlined")]
+
+
+def _tables(spec):
+    return [e for e in spec["elements"] if e["type"] == "table"]
+
+
+def _find(spec, eid):
+    return next(x for x in spec["elements"] if x["id"] == eid)
 
 
 def _inside(spec, box, margin=1.0):
@@ -130,7 +141,7 @@ def font_size(spec, rng):
 
 
 def move(spec, rng):
-    movable = [e for e in spec["elements"] if e["type"] in ("text", "circle", "poly", "ean13", "qr")]
+    movable = [e for e in spec["elements"] if e["type"] in ("text", "outlined", "circle", "poly", "ean13", "qr")]
     rng.shuffle(movable)
     for e in movable:
         d = rng.uniform(0.3, 2.5)
@@ -139,7 +150,7 @@ def move(spec, rng):
         s = copy.deepcopy(spec)
         el = next(x for x in s["elements"] if x["id"] == e["id"])
         old = element_bbox_mm(el)
-        if el["type"] == "text":
+        if el["type"] in ("text", "outlined"):
             el["pos_mm"] = [el["pos_mm"][0] + dx, el["pos_mm"][1] + dy]
         elif el["type"] == "circle":
             el["center_mm"] = [el["center_mm"][0] + dx, el["center_mm"][1] + dy]
@@ -210,11 +221,112 @@ def barcode_digit(spec, rng):
                "bbox_ref_mm": list(e["rect_mm"])}
 
 
+# ------------------------------------------------------------------ tabeller
+def cell_value(spec, rng):
+    ts = _tables(spec)
+    if not ts:
+        return None
+    e = ts[rng.integers(len(ts))]
+    s = copy.deepcopy(spec)
+    el = _find(s, e["id"])
+    cands = [c for c in table_layout(el)["cells"] if c["row"] >= 1 and any(ch.isdigit() for ch in c["text"])]
+    if not cands:
+        return None
+    c = cands[rng.integers(len(cands))]
+    txt = c["text"]
+    idx = [i for i, ch in enumerate(txt) if ch.isdigit()]
+    i = idx[rng.integers(len(idx))]
+    new_txt = txt[:i] + str((int(txt[i]) + int(rng.integers(1, 9))) % 10) + txt[i + 1:]
+    old_box = cell_text_bbox_mm(c)
+    el["rows"][c["row"]][c["col"]] = new_txt
+    c2 = next(x for x in table_layout(el)["cells"] if x["row"] == c["row"] and x["col"] == c["col"])
+    return s, {"kind": "Changed", "accept": STRUCT_ANY, "element": e["id"], "category": "TableCell",
+               "table_cell": [c["row"], c["col"]], "detail": {"from": txt, "to": new_txt},
+               "bbox_ref_mm": _union(old_box, cell_text_bbox_mm(c2))}
+
+
+def rule_delete(spec, rng):
+    ts = [e for e in _tables(spec) if e.get("rules", "grid") != "none"]
+    if not ts:
+        return None
+    e = ts[rng.integers(len(ts))]
+    s = copy.deepcopy(spec)
+    el = _find(s, e["id"])
+    hs = [r for r in table_layout(el)["rules"] if r["orient"] == "h" and 0 < r["index"] < len(el["rows"])]
+    if not hs:
+        return None
+    r = hs[rng.integers(len(hs))]
+    el.setdefault("skip_rules", []).append(r["index"])
+    return s, {"kind": "Missing", "accept": ["Missing", "Changed", "Shape", "Moved"], "element": e["id"],
+               "category": "TableRule", "table_rule": r["index"], "detail": {"rule": r["index"]},
+               "bbox_ref_mm": rule_bbox_mm(r, el.get("rule_w_mm", 0.15))}
+
+
+def row_shift(spec, rng):
+    ts = _tables(spec)
+    if not ts:
+        return None
+    e = ts[rng.integers(len(ts))]
+    s = copy.deepcopy(spec)
+    el = _find(s, e["id"])
+    r = int(rng.integers(1, len(el["rows"])))
+    dx = float(rng.choice([-1, 1]) * rng.uniform(0.3, 1.0))
+    old = [cell_text_bbox_mm(c) for c in table_layout(el)["cells"] if c["row"] == r]
+    el.setdefault("row_dx_mm", {})[str(r)] = dx
+    new = [cell_text_bbox_mm(c) for c in table_layout(el)["cells"] if c["row"] == r]
+    box = old[0]
+    for b in old[1:] + new:
+        box = _union(box, b)
+    return s, {"kind": "Moved", "accept": STRUCT_ANY, "element": e["id"], "category": "TableCell",
+               "table_cell": [r, None], "detail": {"row": r, "dx_mm": round(dx, 3)}, "bbox_ref_mm": box}
+
+
+# ------------------------------------------------------------------ punktskrift
+def braille_char(spec, rng):
+    bs = [e for e in spec["elements"] if e["type"] == "braille"]
+    if not bs:
+        return None
+    e = bs[rng.integers(len(bs))]
+    letters = [i for i, ch in enumerate(e["text"]) if ch.isalpha()]
+    if not letters:
+        return None
+    i = letters[rng.integers(len(letters))]
+    old = e["text"][i]
+    pool = [ch for ch in "abcdefghijklmnopqrstuvxyz" if ch != old]
+    new = pool[rng.integers(len(pool))]
+    s = copy.deepcopy(spec)
+    el = _find(s, e["id"])
+    el["text"] = e["text"][:i] + new + e["text"][i + 1:]
+    ci = len(brl.text_to_cells(e["text"][:i]))
+    return s, {"kind": "Braille", "accept": ["Braille"], "element": e["id"], "category": "Braille",
+               "detail": {"from": old, "to": new, "cell": ci}, "bbox_ref_mm": braille_cell_bbox_mm(el, ci)}
+
+
+def outlined_change(spec, rng):
+    """Teckenbyte i konturerad text (för riktade tester)."""
+    only = copy.deepcopy(spec)
+    only["elements"] = [e for e in spec["elements"] if e["type"] == "outlined"]
+    r = char_change(only, rng)
+    if r is None:
+        return None
+    s_only, d = r
+    s = copy.deepcopy(spec)
+    for i, e in enumerate(s["elements"]):
+        if e["id"] == d["element"]:
+            s["elements"][i] = _find(s_only, d["element"])
+    d["category"] = "OutlinedText"
+    return s, d
+
+
 CATALOG = {
     "char_change": char_change, "diacritic": diacritic, "word_delete": word_delete, "append_text": append_text,
     "font_size": font_size, "move": move, "delete": delete, "color_shift": color_shift,
     "barcode_digit": barcode_digit,
+    "cell_value": cell_value, "rule_delete": rule_delete, "row_shift": row_shift, "braille_char": braille_char,
 }
+TARGETED = {"outlined_change": outlined_change}
+
+CATEGORY_OF_TYPE = {"text": "Text", "outlined": "OutlinedText"}
 
 
 def _overlaps(a, b, pad=1.0):
@@ -231,7 +343,7 @@ def mutate(spec: dict, rng: np.random.Generator, n: int, allowed=None):
     while len(defects) < n and tries < 60:
         tries += 1
         name = names[rng.integers(len(names))]
-        r = CATALOG[name](spec, rng)
+        r = (CATALOG.get(name) or TARGETED[name])(spec, rng)
         if r is None:
             continue
         s, d = r
@@ -241,6 +353,10 @@ def mutate(spec: dict, rng: np.random.Generator, n: int, allowed=None):
             continue
         spec = s
         used_elements.add(d["element"])
+        if "category" not in d:
+            et = next((x["type"] for x in spec["elements"] if x["id"] == d["element"]), None)
+            if et in CATEGORY_OF_TYPE:
+                d["category"] = CATEGORY_OF_TYPE[et]
         d.update({"id": f"a{len(defects) + 1}", "mutation": name, "systematic": True,
                   "bbox_ref_mm": [round(float(v), 3) for v in d["bbox_ref_mm"]]})
         defects.append(d)

@@ -98,6 +98,12 @@ def add_print_defect(img, ppm, kind, rng, region_mm, avoid_mm=()):
             cv2.ellipse(m, center, axes, 0, 0, 360, 1.0, -1, cv2.LINE_AA, shift=4)
         m = cv2.GaussianBlur(m, (0, 0), 0.6)
         dark = kind != "spot" or rng.random() < 0.6
+        if not dark:
+            # en ljus fläck syns bara på tryckt yta – på vitt papper finns inget att ta bort
+            mm_ = m > 0.5
+            bg = img[mm_].mean() if mm_.any() else 1.0
+            if float(np.mean(bg)) > 0.8:
+                dark = True
         if dark:
             col = np.array([0.18, 0.17, 0.2], np.float32) if rng.random() < 0.7 else np.array([0.1, 0.25, 0.55], np.float32)
             strength = rng.uniform(0.55, 0.95)
@@ -146,3 +152,28 @@ def scanner(img, rng, mtf_sigma, noise_sigma, color_jitter=0.012, gamma=1.0):
     out = np.clip(out @ M.T, 0, 1) ** gamma
     noisy = out * 255 + rng.normal(0, noise_sigma, out.shape).astype(np.float32)
     return np.clip(noisy + 0.5, 0, 255).astype(np.uint8)
+
+
+def emboss(img, dots_px, r_px, strength, light=(0.0, -1.0)):
+    """Prägling: kupolformade punkter belysta från en sida (scannerlampan).
+
+    Ljushetsfaktor 1 + strength * (lutning mot ljuset), normerad så att brantaste
+    lutningen ger ±strength. Ändrar img på plats (float RGB 0..1).
+    """
+    if not dots_px:
+        return
+    h, w = img.shape[:2]
+    pts = np.asarray(dots_px, float)
+    pad = int(np.ceil(2 * r_px)) + 2
+    x0, y0 = max(0, int(pts[:, 0].min()) - pad), max(0, int(pts[:, 1].min()) - pad)
+    x1, y1 = min(w, int(pts[:, 0].max()) + pad), min(h, int(pts[:, 1].max()) + pad)
+    yy, xx = np.mgrid[y0:y1, x0:x1].astype(np.float32)
+    H = np.zeros(yy.shape, np.float32)
+    for x, y in pts:
+        d = np.hypot(xx - x, yy - y) / r_px
+        H += np.where(d < 1, np.cos(np.pi / 2 * d) ** 2, 0).astype(np.float32)
+    gy, gx = np.gradient(H)
+    norm = np.pi / (2 * r_px)
+    shade = (gx * light[0] + gy * light[1]) / norm
+    f = (1 + strength * np.clip(shade, -1.5, 1.5)).astype(np.float32)
+    img[y0:y1, x0:x1] = np.clip(img[y0:y1, x0:x1] * f[..., None], 0, 1)

@@ -16,6 +16,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
+from printcmp import braille as brl
+
 FONTS = {
     "DejaVuSans": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "DejaVuSans-Bold": "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -63,10 +65,138 @@ def char_bbox_mm(el, i0, i1=None):
     return [x0, by - asc, max(x1 - x0, 0.05), asc + desc]
 
 
+# ------------------------------------------------------------------ tabell
+def table_layout(el):
+    """Celler (textläge, rutor) och linjer för ett tabellelement. Allt i mm."""
+    x, y = el["pos_mm"]
+    cw, rh = el["col_widths_mm"], el["row_h_mm"]
+    pad = el.get("pad_mm", 0.8)
+    xs = [x]
+    for w_ in cw:
+        xs.append(xs[-1] + w_)
+    dxs = el.get("row_dx_mm", {})
+    cells = []
+    for r, row in enumerate(el["rows"]):
+        top = y + r * rh
+        base = top + 0.70 * rh
+        font = el.get("header_font", el["font"]) if (r == 0 and el.get("header", True)) else el["font"]
+        for c, txt in enumerate(row):
+            tw = text_width_mm(font, el["size_pt"], txt)
+            off = float(dxs.get(str(r), 0.0))
+            tx = (xs[c + 1] - pad - tw if el["align"][c] == "right" else xs[c] + pad) + off
+            cells.append({"row": r, "col": c, "text": txt, "x": tx, "baseline": base, "font": font,
+                          "size_pt": el["size_pt"], "cell": [xs[c], top, cw[c], rh], "width": tw})
+    rules = []
+    mode = el.get("rules", "grid")
+    n = len(el["rows"])
+    if mode in ("grid", "horizontal"):
+        for i in range(n + 1):
+            rules.append({"index": i, "orient": "h", "x0": xs[0], "y0": y + i * rh, "x1": xs[-1], "y1": y + i * rh})
+    if mode == "grid":
+        for j in range(len(cw) + 1):
+            rules.append({"index": 100 + j, "orient": "v", "x0": xs[j], "y0": y, "x1": xs[j], "y1": y + n * rh})
+    skip = set(el.get("skip_rules", []))
+    rules = [r_ for r_ in rules if r_["index"] not in skip]
+    return {"cells": cells, "rules": rules, "bbox": [xs[0], y, xs[-1] - xs[0], n * rh], "xs": xs}
+
+
+def cell_text_bbox_mm(cell):
+    asc, desc = text_metrics({"font": cell["font"], "size_pt": cell["size_pt"]})
+    return [cell["x"], cell["baseline"] - asc, max(cell["width"], 0.05), asc + desc]
+
+
+def rule_bbox_mm(rule, lw_mm):
+    return [min(rule["x0"], rule["x1"]) - lw_mm / 2, min(rule["y0"], rule["y1"]) - lw_mm / 2,
+            abs(rule["x1"] - rule["x0"]) + lw_mm, abs(rule["y1"] - rule["y0"]) + lw_mm]
+
+
+# ------------------------------------------------------------------ punktskrift
+def braille_dots_mm(el):
+    """[(x, y, cell, dot)] i mm. origin_mm = mitten av punkt 1 i första cellen."""
+    cells = brl.text_to_cells(el["text"])
+    p = el.get("dot_pitch_mm", 2.5)
+    c = el.get("cell_pitch_mm", 6.0)
+    x0, y0 = el["origin_mm"]
+    pts = []
+    for i, dots in enumerate(cells):
+        for n in sorted(dots):
+            col = 0 if n <= 3 else 1
+            row = (n - 1) % 3
+            pts.append((x0 + i * c + col * p, y0 + row * p, i, n))
+    return pts
+
+
+def braille_cell_bbox_mm(el, i):
+    p = el.get("dot_pitch_mm", 2.5)
+    c = el.get("cell_pitch_mm", 6.0)
+    r = el.get("dot_d_mm", 1.5) / 2
+    x0, y0 = el["origin_mm"]
+    return [x0 + i * c - r, y0 - r, p + 2 * r, 2 * p + 2 * r]
+
+
+# ------------------------------------------------------------------ konturerad text
+_ft_fonts = {}
+
+
+def _ft(name):
+    from fontTools.ttLib import TTFont as FTFont
+    if name not in _ft_fonts:
+        _ft_fonts[name] = FTFont(FONTS[name])
+    return _ft_fonts[name]
+
+
+def _draw_outlined(c, el, Y):
+    from fontTools.pens.basePen import BasePen
+    f = _ft(el["font"])
+    upem = f["head"].unitsPerEm
+    cmap = f.getBestCmap()
+    gs = f.getGlyphSet()
+    s = el["size_pt"] / upem
+    x = el["pos_mm"][0] * mm
+    yb = Y(el["pos_mm"][1])
+
+    class Pen(BasePen):
+        def __init__(self, path, ox):
+            super().__init__(gs)
+            self.p, self.ox = path, ox
+
+        def _t(self, pt):
+            return (self.ox + pt[0] * s, yb + pt[1] * s)
+
+        def _moveTo(self, pt):
+            self.p.moveTo(*self._t(pt))
+
+        def _lineTo(self, pt):
+            self.p.lineTo(*self._t(pt))
+
+        def _curveToOne(self, p1, p2, p3):
+            self.p.curveTo(*self._t(p1), *self._t(p2), *self._t(p3))
+
+        def _closePath(self):
+            self.p.close()
+
+    c.setFillColor(_color(el.get("color")))
+    for ch in el["text"]:
+        g = cmap.get(ord(ch))
+        if g is None:
+            continue
+        if ch != " ":
+            path = c.beginPath()
+            gs[g].draw(Pen(path, x))
+            c.drawPath(path, stroke=0, fill=1)
+        x += f["hmtx"][g][0] * s
+
+
 def element_bbox_mm(el):
     t = el["type"]
-    if t in ("text", "variable"):
+    if t in ("text", "variable", "outlined"):
         return char_bbox_mm(el, 0, len(el["text"]))
+    if t == "table":
+        return list(table_layout(el)["bbox"])
+    if t == "braille":
+        n = len(brl.text_to_cells(el["text"]))
+        a, b = braille_cell_bbox_mm(el, 0), braille_cell_bbox_mm(el, n - 1)
+        return [a[0], a[1], b[0] + b[2] - a[0], a[3]]
     if t in ("rect", "ean13", "qr", "varnish"):
         return list(el["rect_mm"])
     if t == "circle":
@@ -95,6 +225,26 @@ def render_pdf(spec: dict) -> bytes:
             c.setFillColor(_color(el.get("color")))
             c.setFont(el["font"], el["size_pt"])
             c.drawString(el["pos_mm"][0] * mm, Y(el["pos_mm"][1]), el["text"])
+        elif t == "outlined":
+            _draw_outlined(c, el, Y)
+        elif t == "table":
+            lay = table_layout(el)
+            c.setFillColor(_color(el.get("color")))
+            for cell in lay["cells"]:
+                ensure_font(cell["font"])
+                c.setFont(cell["font"], cell["size_pt"])
+                c.drawString(cell["x"] * mm, Y(cell["baseline"]), cell["text"])
+            c.setStrokeColor(_color(el.get("rule_color")))
+            c.setLineWidth(el.get("rule_w_mm", 0.15) * mm)
+            c.setLineCap(2)
+            for r_ in lay["rules"]:
+                c.line(r_["x0"] * mm, Y(r_["y0"]), r_["x1"] * mm, Y(r_["y1"]))
+        elif t == "braille":
+            # prägling: egen dekorfärg som inte trycks
+            c.setFillColor(CMYKColorSep(0, 0.6, 0, 0, spotName=el.get("spot", "Braille"), density=1))
+            rr = el.get("dot_d_mm", 1.5) / 2
+            for x_, y_, _, _ in braille_dots_mm(el):
+                c.circle(x_ * mm, Y(y_), rr * mm, stroke=0, fill=1)
         elif t == "rect":
             x, y, w, h = el["rect_mm"]
             c.setFillColor(_color(el.get("color")))

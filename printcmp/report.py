@@ -12,7 +12,10 @@ from .pipeline import KIND_COLORS
 
 SEV_CLASS = {"Critical": "crit", "Major": "major", "Minor": "minor", "Info": "info"}
 KIND_SV = {"Missing": "Saknas", "Added": "Tillagt", "Changed": "Ändrat", "Moved": "Flyttat", "Color": "Färg",
-           "Shape": "Form", "Barcode": "Streckkod", "Uncertain": "Osäker zon"}
+           "Shape": "Form", "Barcode": "Streckkod", "Uncertain": "Osäker zon", "Braille": "Punktskrift"}
+CAT_SV = {"Text": "Text", "OutlinedText": "Konturerad text", "TableCell": "Tabellcell", "TableRule": "Tabellinje",
+          "Barcode": "Streckkod", "Braille": "Punktskrift", "Image": "Bild", "Vector": "Grafik", "Rule": "Linje",
+          "Background": "Bakgrund"}
 STATUS_SV = {"pass": "Godkänd", "warn": "Varning", "fail": "Fel"}
 STATUS_RGB = {"pass": (22, 163, 74), "warn": (217, 119, 6), "fail": (220, 38, 38)}
 
@@ -37,6 +40,28 @@ def _crop(img, bbox_mm, dpi, pad_mm=2.0, min_mm=6.0):
     bx0, by0 = int(x * ppm) - x0, int(y * ppm) - y0
     bx1, by1 = int((x + w) * ppm) - x0, int((y + h) * ppm) - y0
     return c, (bx0, by0, bx1, by1)
+
+
+def _contents(result) -> str:
+    ref = result["reference"]
+    rows = []
+    for t in ref.get("tables", []):
+        kind = {"ruled_grid": "med rutnät", "ruled_horizontal": "med vågräta linjer", "unruled": "utan linjer"}[t["kind"]]
+        first = " · ".join(html.escape(c) for c in t["cells"][0] if c) if t["cells"] else ""
+        rows.append(f"<li>Tabell {t['id']} ({kind}): {t['rows']} rader × {t['cols']} kolumner"
+                    f"{', ' + str(t['rules']) + ' linjer' if t['rules'] else ''}"
+                    f" – <span class=muted>{first}</span></li>")
+    for b in ref.get("braille", []):
+        rows.append(f"<li>Punktskrift: \u201d{html.escape(b['text'])}\u201d {b['unicode']} "
+                    f"<span class=muted>({b['cells']} celler, punktavstånd {b['dot_pitch_mm']} mm, "
+                    f"cellavstånd {b['cell_pitch_mm']} mm)</span></li>")
+    if ref.get("outlined_text_mm"):
+        rows.append(f"<li>Konturerad text: {len(ref['outlined_text_mm'])} rad(er)</li>")
+    for c in ref.get("barcodes", []):
+        rows.append(f"<li>Streckkod {html.escape(c['symbology'])}: {html.escape(c['data'])}</li>")
+    if not rows:
+        return ""
+    return "<h2>Identifierat i originalet</h2><ul>" + "".join(rows) + "</ul>"
 
 
 def write_html(path: Path, result: dict, ref_rgb, sample_rgb, insts, dpi, sample_dpi, layers_dir: Path | None):
@@ -97,6 +122,36 @@ def write_html(path: Path, result: dict, ref_rgb, sample_rgb, insts, dpi, sample
             details.append(f"Förskjutning {m['shift_mm']:.2f} mm")
         if m.get("delta_e") is not None and d["kind"] == "Color":
             details.append(f"ΔE00 {m['delta_e']:.1f}")
+        if d.get("category") in CAT_SV:
+            details.insert(0, f"<b>{CAT_SV[d['category']]}</b>")
+        ti = d.get("table")
+        if ti:
+            if ti.get("element") == "rule":
+                if ti.get("between_rows"):
+                    details.append(f"Tabell {ti['table']}: linjen mellan rad {ti['between_rows'][0] + 1} och "
+                                   f"{ti['between_rows'][1] + 1}")
+                else:
+                    details.append(f"Tabell {ti['table']}: {'yttre ram' if ti.get('orient') == 'h' else 'lodrät linje'}")
+            elif ti.get("row_shift"):
+                details.append(f"Tabell {ti['table']}: rad {ti['row'] + 1} förskjuten "
+                               f"(\u201d{html.escape(ti.get('row_label') or '')}\u201d)")
+            else:
+                where_ = f"rad {ti['row'] + 1}" + (f", kolumn {ti['col'] + 1}" if ti.get("col") is not None else "")
+                lab = html.escape(ti.get("row_label") or "")
+                cell = html.escape(ti.get("cell_text") or "")
+                details.append(f"Tabell {ti['table']}: {where_}" + (f" – {lab}" if lab else "") +
+                               (f" = \u201d{cell}\u201d i originalet" if cell and ti.get("col") else ""))
+        bi = d.get("braille")
+        if bi and d["kind"] == "Braille":
+            if d.get("cause") == "embossing_missing":
+                details.append(f"Prägling saknas för hela raden (väntat \u201d{html.escape(bi.get('expected_text', ''))}\u201d)")
+            elif "cell" in bi:
+                details.append(f"Cell {bi['cell'] + 1}: väntat \u201d{html.escape(bi['expected'])}\u201d "
+                               f"{bi['expected_unicode']}, läst \u201d{html.escape(bi['read'])}\u201d {bi['read_unicode']}")
+                if bi.get("missing_dots"):
+                    details.append("Saknade punkter: " + ", ".join(map(str, bi["missing_dots"])))
+                if bi.get("extra_dots"):
+                    details.append("Extra punkter: " + ", ".join(map(str, bi["extra_dots"])))
         if d.get("barcode"):
             bcd = d["barcode"]
             details.append(f"Streckkod: väntat {html.escape(str(bcd.get('expected')))}, läst {html.escape(str(bcd.get('read')))}")
@@ -122,7 +177,9 @@ def write_html(path: Path, result: dict, ref_rgb, sample_rgb, insts, dpi, sample
             f' · <span class="st {io["status"]}">{STATUS_SV[io["status"]]}</span><br>'
             f'<span class=muted>registrering {("%.2f px" % rms) if rms is not None else "–"} · ΔE medel '
             f'{io["mean_delta_e"] if io["mean_delta_e"] is not None else "–"}'
-            f'{" · veck" if io["folds"] else ""}</span></figcaption></figure>')
+            f'{" · veck" if io["folds"] else ""}'
+            f'{(" · punktskrift: " + html.escape(" / ".join(r or "–" for r in io["braille"]["read"]))) if io.get("braille") else ""}'
+            f'</span></figcaption></figure>')
 
     sm = result["summary"]
     sh = result["sheet"]
@@ -158,6 +215,7 @@ td.num{{color:var(--muted)}} .sev{{font-size:12px;font-weight:600;padding:2px 8p
 <div class=card><b>{sm["differences"]}</b>skillnader ({sm["systematic"]} systematiska)</div>
 <div class=card><b>{sh["rotation_deg"]:+.2f}°</b>arkets rotation</div>
 </div>
+{_contents(result)}
 <h2>Ark</h2><img src="{imageio.png_data_uri(sheet)}" alt="Arköversikt">
 <h2>Skillnader</h2>
 <table><thead><tr><th>#</th><th>Allvar</th><th>Typ</th><th>Instanser</th><th>Position</th><th>Detaljer</th><th>Utsnitt</th></tr></thead>

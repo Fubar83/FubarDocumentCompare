@@ -71,4 +71,65 @@ def spice():
     }
 
 
-TEMPLATES = {"oat_drink": oat_drink, "spice": spice}
+NUTRITION_ROWS = [
+    ["Näringsvärde", "per 100 ml"],
+    ["Energi", "189 kJ / 45 kcal"],
+    ["Fett", "1,5 g"],
+    ["varav mättat fett", "0,2 g"],
+    ["Kolhydrater", "6,6 g"],
+    ["varav sockerarter", "4,1 g"],
+    ["Protein", "1,0 g"],
+    ["Salt", "0,10 g"],
+]
+
+
+def nutrition_grid():
+    """Tabell med rutnät, konturerad produkttitel och präglad punktskrift."""
+    return {
+        "name": "nutrition_grid",
+        "size_mm": [75, 58],
+        "dieline": {"shape": "rounded_rect", "radius_mm": 3},
+        "elements": [
+            {"id": "brand", "type": "outlined", "text": "Havrebryggan", "font": "DejaVuSans-Bold",
+             "size_pt": 12, "pos_mm": [4, 8.5], "color": {"cmyk": [1.0, 0.7, 0.0, 0.3]}},
+            {"id": "sub", "type": "text", "text": "Havredryck · 1 liter", "font": "DejaVuSans", "size_pt": 6.5,
+             "pos_mm": [4, 13.2], "color": K},
+            {"id": "nut", "type": "table", "pos_mm": [4, 16.0], "col_widths_mm": [23, 21], "row_h_mm": 3.3,
+             "rows": [list(r) for r in NUTRITION_ROWS], "font": "DejaVuSans", "header_font": "DejaVuSans-Bold",
+             "size_pt": 5.5, "align": ["left", "right"], "rules": "grid", "rule_w_mm": 0.15, "color": K},
+            {"id": "ean", "type": "ean13", "data": "731086500456", "rect_mm": [51, 17, 21, 15]},
+            {"id": "store", "type": "text", "text": "Skakas före användning.", "font": "DejaVuSans", "size_pt": 5.5,
+             "pos_mm": [50, 37.5], "color": K},
+            {"id": "braille", "type": "braille", "text": "havredryck", "origin_mm": [6.0, 48.0],
+             "dot_d_mm": 1.5, "dot_pitch_mm": 2.5, "cell_pitch_mm": 6.0},
+        ],
+    }
+
+
+def nutrition_open():
+    """Tabell utan linjer (bara justering), konturerad titel och punktskrift."""
+    rows = [list(r) for r in NUTRITION_ROWS]
+    return {
+        "name": "nutrition_open",
+        "size_mm": [75, 58],
+        "dieline": {"shape": "rounded_rect", "radius_mm": 3},
+        "elements": [
+            {"id": "band", "type": "rect", "rect_mm": [0, 0, 75, 3.5], "color": {"cmyk": [0.0, 0.35, 0.9, 0.0]}},
+            {"id": "brand", "type": "outlined", "text": "Mandeldryck", "font": "DejaVuSans-Bold",
+             "size_pt": 11, "pos_mm": [4, 10.0], "color": {"cmyk": [0.1, 0.6, 1.0, 0.3]}},
+            {"id": "sub", "type": "text", "text": "Osötad · 1 liter", "font": "DejaVuSans", "size_pt": 6.5,
+             "pos_mm": [4, 14.4], "color": K},
+            {"id": "nut", "type": "table", "pos_mm": [4, 17.0], "col_widths_mm": [27, 19], "row_h_mm": 3.2,
+             "rows": rows, "font": "DejaVuSans", "header_font": "DejaVuSans-Bold",
+             "size_pt": 5.5, "align": ["left", "right"], "rules": "none", "color": K},
+            {"id": "ingr", "type": "text", "text": "Ingredienser: vatten, mandel 2,5 %.", "font": "DejaVuSans",
+             "size_pt": 5.5, "pos_mm": [4, 46.0], "color": K},
+            {"id": "qr", "type": "qr", "data": "https://example.com/p/7710", "rect_mm": [55, 18, 15, 15]},
+            {"id": "braille", "type": "braille", "text": "mandel", "origin_mm": [36.0, 50.0],
+             "dot_d_mm": 1.5, "dot_pitch_mm": 2.5, "cell_pitch_mm": 6.0},
+        ],
+    }
+
+
+TEMPLATES = {"oat_drink": oat_drink, "spice": spice, "nutrition_grid": nutrition_grid,
+             "nutrition_open": nutrition_open}

@@ -21,15 +21,18 @@ from printcmp import imageio, pdfspots  # noqa: E402
 from tools.testgen import labelpdf, mutate, sim  # noqa: E402
 from tools.testgen.templates import TEMPLATES  # noqa: E402
 
-GENERATOR_VERSION = "testgen 0.1.0"
+GENERATOR_VERSION = "testgen 0.2.0"
 
 DIFFICULTY = {
     "easy":   {"halftone": False, "rot": 1.0, "fold_p": 0.0, "noise": (0.8, 1.5), "mtf": (0.6, 0.8),
-               "misreg": 0.0, "gain": (0.04, 0.08), "inst_rot180_p": 0.0},
+               "misreg": 0.0, "gain": (0.04, 0.08), "inst_rot180_p": 0.0, "emboss": (0.18, 0.28),
+               "emboss_missing_p": 0.5},
     "normal": {"halftone": True, "rot": 2.0, "fold_p": 0.5, "noise": (1.0, 2.5), "mtf": (0.7, 1.0),
-               "misreg": 0.06, "gain": (0.06, 0.16), "inst_rot180_p": 0.0},
+               "misreg": 0.06, "gain": (0.06, 0.16), "inst_rot180_p": 0.0, "emboss": (0.12, 0.22),
+               "emboss_missing_p": 0.5},
     "hard":   {"halftone": True, "rot": 3.5, "fold_p": 0.9, "noise": (2.0, 3.5), "mtf": (0.9, 1.2),
-               "misreg": 0.12, "gain": (0.10, 0.22), "inst_rot180_p": 0.15},
+               "misreg": 0.12, "gain": (0.10, 0.22), "inst_rot180_p": 0.15, "emboss": (0.08, 0.16),
+               "emboss_missing_p": 0.6},
 }
 
 
@@ -45,6 +48,7 @@ def render_rgb(pdf_bytes, dpi):
 
 
 def make_case(template: str, seed: int, out_dir: Path, difficulty: str = "normal", cols: int = 2, rows: int = 4,
+              allowed=None,
               n_artwork=None, n_print=None, dpi: int = 600):
     rng = np.random.default_rng(seed)
     D = DIFFICULTY[difficulty]
@@ -57,7 +61,7 @@ def make_case(template: str, seed: int, out_dir: Path, difficulty: str = "normal
     (out_dir / "reference.pdf").write_bytes(ref_pdf)
 
     na = int(rng.integers(0, 4)) if n_artwork is None else n_artwork
-    mutated, art_defects = mutate.mutate(base, rng, na)
+    mutated, art_defects = mutate.mutate(base, rng, na, allowed)
     mut_pdf = labelpdf.render_pdf(mutated)
 
     # ---- tryck ----
@@ -90,6 +94,17 @@ def make_case(template: str, seed: int, out_dir: Path, difficulty: str = "normal
     np_total = int(rng.integers(0, 5)) if n_print is None else n_print
     defect_inst = set(rng.choice(rows * cols, size=min(np_total, rows * cols), replace=False).tolist()) if np_total else set()
     avoid = [d["bbox_ref_mm"] for d in art_defects] + ([var_box] if var_box else [])
+    # punktskrift: präglade punkter (från den muterade layouten) per instans
+    b_els = [e for e in mutated["elements"] if e["type"] == "braille"]
+    b_dots = [(x, y, e["id"], ci, n, e.get("dot_d_mm", 1.5) / 2) for e in b_els
+              for (x, y, ci, n) in labelpdf.braille_dots_mm(e)]
+    avoid += [labelpdf.element_bbox_mm(e) for e in b_els]
+    emb_strength = float(rng.uniform(*D["emboss"]))
+    emb_light = (0.0, -1.0) if rng.random() < 0.5 else (0.0, 1.0)
+    emb_missing = {}
+    if b_dots and rng.random() < D["emboss_missing_p"]:
+        k = int(rng.integers(rows * cols)) + 1
+        emb_missing[k] = int(rng.integers(len(b_dots)))
     idx = 0
     for r in range(rows):
         for c in range(cols):
@@ -119,6 +134,16 @@ def make_case(template: str, seed: int, out_dir: Path, difficulty: str = "normal
                             0.085 * ppm / 2.0, 255, max(1, int(0.12 * ppm)), cv2.LINE_AA)
                 a_ = (tm.astype(np.float32) / 255.0)[..., None]
                 img[y0:y1, x0:x1] = img[y0:y1, x0:x1] * (1 - a_) + np.float32(0.1) * a_
+            if b_dots:
+                keep = [d for j, d in enumerate(b_dots) if emb_missing.get(idx) != j]
+                sim.emboss(img, [(x * ppm, y * ppm) for x, y, *_ in keep], b_dots[0][5] * ppm, emb_strength, emb_light)
+                if idx in emb_missing:
+                    x, y, eid, ci, n, rr = b_dots[emb_missing[idx]]
+                    print_defects.append({"id": f"p{len(print_defects) + 1}", "kind": "Braille", "category": "Braille",
+                                          "accept": ["Braille"], "systematic": False, "instances": [idx],
+                                          "bbox_ref_mm": [round(x - rr - 0.3, 3), round(y - rr - 0.3, 3),
+                                                          round(2 * rr + 0.6, 3), round(2 * rr + 0.6, 3)],
+                                          "mutation": "emboss_missing", "detail": {"cell": ci, "dot": n}})
             rot180 = rng.random() < D["inst_rot180_p"]
             if rot180:
                 img = img[::-1, ::-1].copy()
@@ -219,7 +244,7 @@ def make_case(template: str, seed: int, out_dir: Path, difficulty: str = "normal
         "defects": art_defects + print_defects,
         "expect_uncertain": expect_uncertain,
         "variable_mask_mm": var_box,
-        "sim_params": {**p, "mtf_sigma_px": mtf, "noise_sigma": noise},
+        "sim_params": {**p, "mtf_sigma_px": mtf, "noise_sigma": noise, "emboss_strength": emb_strength},
     }
     (out_dir / "truth.json").write_text(json.dumps(truth, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -258,6 +283,8 @@ def main(argv=None):
     ap.add_argument("--template", default=None, choices=[None] + list(TEMPLATES))
     ap.add_argument("--rows", type=int, default=4)
     ap.add_argument("--cols", type=int, default=2)
+    ap.add_argument("--mutations", default=None, help="kommaseparerad lista, t.ex. rule_delete,braille_char")
+    ap.add_argument("--n-artwork", type=int, default=None)
     a = ap.parse_args(argv)
     out = Path(a.out)
     names = list(TEMPLATES)
@@ -265,7 +292,8 @@ def main(argv=None):
         seed = a.seed + i
         tpl = a.template or names[i % len(names)]
         d = out / f"case_{seed:05d}"
-        t = make_case(tpl, seed, d, a.difficulty, a.cols, a.rows)
+        t = make_case(tpl, seed, d, a.difficulty, a.cols, a.rows,
+                      allowed=a.mutations.split(",") if a.mutations else None, n_artwork=a.n_artwork)
         print(f"{d.name}: {tpl}, {len(t['defects'])} fel "
               f"({sum(x['systematic'] for x in t['defects'])} systematiska), veck {len(t['sheet']['folds'])}, "
               f"rotation {t['sheet']['rotation_deg']:+.2f}°", flush=True)

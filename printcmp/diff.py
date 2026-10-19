@@ -25,6 +25,7 @@ class DiffMaps:
     delta_e: np.ndarray
     struct_mask: np.ndarray
     color_mask: np.ndarray
+    text_mask: np.ndarray | None = None   # textobjektens ytor (känsligare tröskel)
 
 
 @dataclass
@@ -49,7 +50,7 @@ def _range_dist(a: np.ndarray, b: np.ndarray, radius: int) -> np.ndarray:
 
 
 def compute(ref_f: np.ndarray, smp_f: np.ndarray, valid: np.ndarray, varnish: np.ndarray,
-            ppm: float, tol: dict) -> DiffMaps:
+            ppm: float, tol: dict, text_mask: np.ndarray | None = None) -> DiffMaps:
     ref_lab = rgb2lab(ref_f).astype(np.float32)
     smp_lab = rgb2lab(smp_f).astype(np.float32)
     rL, sL = ref_lab[..., 0], smp_lab[..., 0]
@@ -64,6 +65,10 @@ def compute(ref_f: np.ndarray, smp_f: np.ndarray, valid: np.ndarray, varnish: np
     absdl = np.abs(cv2.GaussianBlur(sL - rL, (0, 0), 1.0))
     struct = ((d_struct > tol["struct_dl"]) & (ssim < 0.95)) | (d_struct > tol["struct_dl_strong"]) | \
              ((ssim < tol["ssim"]) & (absdl > 0.75 * tol["struct_dl"]) & (d_struct > 0.5 * tol["struct_dl"]))
+    if text_mask is not None:
+        # Inom text räcker en mindre avvikelse: en ändrad siffra i liten text (6 → 8)
+        # ger bara ett kort streck. Textytor är rena i övrigt, så tröskeln kan sänkas.
+        struct |= text_mask & (d_struct > tol["struct_dl_text"]) & (ssim < 0.95)
     struct &= valid
 
     k = max(3, int(round(tol["color_window_mm"] * ppm)) | 1)
@@ -77,7 +82,7 @@ def compute(ref_f: np.ndarray, smp_f: np.ndarray, valid: np.ndarray, varnish: np
     # Mycket mörka ytor (svart) har instabil kulörton i scannern – bedöms bara på ljushet.
     dark = (rb[..., 0] < 25) & (sb[..., 0] < 25)
     color = (de > tol["delta_e"]) & valid & ~edgy & ~varnish & ~dark
-    return DiffMaps(ref_lab, smp_lab, d_struct, ssim, de, struct, color)
+    return DiffMaps(ref_lab, smp_lab, d_struct, ssim, de, struct, color, text_mask)
 
 
 def blobs(maps: DiffMaps, ppm: float, tol: dict) -> list[Blob]:
@@ -95,7 +100,19 @@ def blobs(maps: DiffMaps, ppm: float, tol: dict) -> list[Blob]:
             sub = (labels[y:y + h, x:x + w] == i) & (mm[y:y + h, x:x + w] > 0)
             area = int(sub.sum())
             if area < min_area:
-                continue
+                # Liten avvikelse i text godtas om den är tydlig (minst struct_dl) och
+                # ligger i textytan.
+                if not (kind == "struct" and maps.text_mask is not None
+                        and area >= tol["min_text_blob_mm2"] * ppm * ppm):
+                    continue
+                tsub = maps.text_mask[y:y + h, x:x + w][sub]
+                if tsub.mean() < 0.5 or maps.d_struct[y:y + h, x:x + w][sub].max() < tol["struct_dl"]:
+                    continue
+            # snäv ruta kring de flaggade pixlarna (inte den sammanslagna/utvidgade ytan)
+            ys_, xs_ = np.nonzero(sub)
+            x, y = x + int(xs_.min()), y + int(ys_.min())
+            sub = sub[ys_.min():ys_.max() + 1, xs_.min():xs_.max() + 1]
+            h, w = sub.shape
             dl = maps.d_struct[y:y + h, x:x + w][sub]
             de = maps.delta_e[y:y + h, x:x + w][sub]
             sdl = (maps.smp_lab[y:y + h, x:x + w, 0] - maps.ref_lab[y:y + h, x:x + w, 0])[sub]

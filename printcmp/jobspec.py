@@ -15,11 +15,14 @@ PROFILES = {
         "min_blob_mm2": 0.04,
         "struct_dl": 20.0,         # L*-avvikelse utanför grannskapets min/max
         "struct_dl_strong": 35.0,
+        "struct_dl_text": 15.0,      # lägre tröskel inom textobjekt
+        "min_text_blob_mm2": 0.015,
+        "text_small_mm": 2.6,        # ordhöjd upp till vilken textkänsligheten gäller
         "ssim": 0.35,
         "edge_radius_mm": 0.15,    # tillåten kantförskjutning (r_edge)
         "delta_e": 8.0,             # okalibrerad scanner; med IT8-kalibrering är 3–5 rimligt
-        "min_color_blob_mm2": 1.0,  # färgfel är ytor; mindre fläckar är raster/moiré
-        "color_window_mm": 0.6,
+        "min_color_blob_mm2": 2.0,  # färgfel är ytor; mindre fläckar är raster/moiré
+        "color_window_mm": 1.5,     # större än typisk moiréperiod (≈ 1–1,3 mm)
         "local_cell_mm": 6.0,
         "max_local_shift_mm": 0.6,
         "fold_band_mm": 1.6,
@@ -42,8 +45,8 @@ PROFILES = {
     },
     "pdf_vs_pdf": {
         "extends": "label_standard",
-        "min_blob_mm2": 0.005, "struct_dl": 8.0, "struct_dl_strong": 20.0, "ssim": 0.9,
-        "edge_radius_mm": 0.03, "delta_e": 1.5, "min_color_blob_mm2": 0.05,
+        "min_blob_mm2": 0.005, "min_text_blob_mm2": 0.005, "struct_dl": 8.0, "struct_dl_text": 8.0, "struct_dl_strong": 20.0, "ssim": 0.9,
+        "edge_radius_mm": 0.03, "delta_e": 1.5, "min_color_blob_mm2": 0.05, "color_window_mm": 0.6,
         "descreen": False, "normalize": False, "local_registration": False, "fold_detection": False,
     },
 }

@@ -7,8 +7,80 @@ import numpy as np
 from . import barcode as bc
 from .diff import Blob, DiffMaps
 from .objmap import ObjEntry, overlapping
+from . import structure
 
 SEV = ["Info", "Minor", "Major", "Critical"]
+
+# Lägsta allvarlighet per objektkategori (innehåll som påverkar läsbarhet/regelefterlevnad)
+MIN_SEV = {"Text": "Major", "OutlinedText": "Major", "TableCell": "Major", "TableRule": "Major",
+           "Barcode": "Critical", "Braille": "Critical"}
+CAT_ORDER = ("Text", "OutlinedText", "Barcode", "Image", "Rule", "Vector")
+
+
+def _raise(sev: str, floor: str) -> str:
+    return SEV[max(SEV.index(sev), SEV.index(floor))]
+
+
+def _tone_offset(rL, sL, maps, b: Blob, objs_hit, ppm: float):
+    """Förklaras skillnaden av en enhetlig tonförskjutning i hela objektet?
+
+    Typiskt vid okalibrerad scanner och unika färger: samma form, annan ljushet.
+    Returnerar {"offset", "delta_e"} eller None.
+    """
+    cands = [o for o in objs_hit if o.kind in ("Text", "OutlinedText", "Vector")]
+    if not cands:
+        return None
+    o = max(cands, key=lambda o: (o.bbox[2] - o.bbox[0]) * (o.bbox[3] - o.bbox[1]))
+    h, w = rL.shape
+    pad = int(0.3 * ppm)
+    X0, Y0 = max(0, int(o.bbox[0]) - pad), max(0, int(o.bbox[1]) - pad)
+    X1, Y1 = min(w, int(o.bbox[2]) + pad), min(h, int(o.bbox[3]) + pad)
+    x0, y0, x1, y1 = b.bbox
+    blob_ref = rL[y0:y1, x0:x1][b.mask]
+    blob_dif = (sL[y0:y1, x0:x1] - rL[y0:y1, x0:x1])[b.mask]
+    if blob_ref.size < 5:
+        return None
+    tone_ref = float(np.median(blob_ref))
+    R = rL[Y0:Y1, X0:X1]
+    same = np.abs(R - tone_ref) < 6.0
+    # bara objektets "inre" (bort från kanter) räknas, så registreringsfel inte spelar in
+    same &= cv2.erode(same.astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)
+    if same.sum() < max(50, 4 * blob_ref.size):
+        return None
+    D = (sL[Y0:Y1, X0:X1] - R)[same]
+    off = float(np.median(D))
+    if abs(off) < 8.0:
+        return None
+    spread = float(np.median(np.abs(D - off)))
+    if spread > 0.35 * abs(off) or abs(float(np.median(blob_dif)) - off) > 0.35 * abs(off) + 3.0:
+        return None
+    de = float(np.median(maps.delta_e[Y0:Y1, X0:X1][same]))
+    return {"offset": off, "delta_e": de}
+
+
+def _near_text_line(objs, box) -> bool:
+    """Ligger rutan på samma rad som befintlig text, nära i sidled?"""
+    cy = (box[1] + box[3]) / 2
+    for o in objs:
+        if o.kind not in ("Text", "OutlinedText"):
+            continue
+        h = o.bbox[3] - o.bbox[1]
+        if not (o.bbox[1] - 0.2 * h <= cy <= o.bbox[3] + 0.2 * h):
+            continue
+        gap = max(box[0] - o.bbox[2], o.bbox[0] - box[2], 0)
+        if gap <= 2.0 * h:
+            return True
+    return False
+
+
+def category_of(objs_hit, table_info) -> str:
+    if table_info:
+        return "TableRule" if table_info["element"] == "rule" else "TableCell"
+    kinds = {o.kind for o in objs_hit}
+    for k in CAT_ORDER:
+        if k in kinds:
+            return k
+    return "Background"
 
 
 def _moved_test(src_L: np.ndarray, dst_L: np.ndarray, box, ppm: float, max_mm: float = 4.0):
@@ -30,7 +102,30 @@ def _moved_test(src_L: np.ndarray, dst_L: np.ndarray, box, ppm: float, max_mm: f
     _, best, _, loc = cv2.minMaxLoc(res)
     zx, zy = x0 - sx0, y0 - sy0
     zero = float(res[zy, zx]) if 0 <= zy < res.shape[0] and 0 <= zx < res.shape[1] else -1.0
-    return (loc[0] - zx, loc[1] - zy, float(best), zero)
+    # Fanns samma innehåll redan på målplatsen i källbilden (t.ex. ett annat "g" i ordet)?
+    # Då är det ingen flytt, bara en likadan form i närheten.
+    dx, dy = loc[0] - zx, loc[1] - zy
+    tx0, ty0 = x0 + dx, y0 + dy
+    own = src_L[ty0:ty0 + patch.shape[0], tx0:tx0 + patch.shape[1]]
+    if own.shape == patch.shape and own.std() > 1e-3:
+        same = float(cv2.matchTemplate(own.astype(np.float32), patch.astype(np.float32), cv2.TM_CCOEFF_NORMED)[0, 0])
+        if same > best - 0.1:
+            return None
+    return (dx, dy, float(best), zero)
+
+
+def _inside_word(objs_hit, box, ppm: float) -> bool:
+    """Blobben ligger inne i ett ord och täcker bara en liten del av det."""
+    x0, y0, x1, y1 = box
+    pad = 0.15 * ppm
+    for o in objs_hit:
+        if o.kind not in ("Text", "OutlinedText"):
+            continue
+        ox0, oy0, ox1, oy1 = o.bbox
+        if x0 >= ox0 - pad and y0 >= oy0 - pad and x1 <= ox1 + pad and y1 <= oy1 + pad:
+            if (x1 - x0) * (y1 - y0) < 0.4 * (ox1 - ox0) * (oy1 - oy0):
+                return True
+    return False
 
 
 def _presence_kind(rL, sL, b: Blob, ppm: float) -> str:
@@ -64,7 +159,7 @@ def _presence_kind(rL, sL, b: Blob, ppm: float) -> str:
 
 def classify(blobs: list[Blob], maps: DiffMaps, objs: list[ObjEntry], ref_codes: list[bc.Code],
              smp_rgb_u8: np.ndarray, fold_band: np.ndarray, confidence: np.ndarray,
-             ppm: float, dpi: float, tol: dict, instance: int) -> list[dict]:
+             ppm: float, dpi: float, tol: dict, instance: int, tables=()) -> list[dict]:
     rL = maps.ref_lab[..., 0]
     sL = maps.smp_lab[..., 0]
     out: list[dict] = []
@@ -80,9 +175,16 @@ def classify(blobs: list[Blob], maps: DiffMaps, objs: list[ObjEntry], ref_codes:
             "objects": [], "metrics": {"delta_l": round(b.max_dl, 2), "delta_e": round(b.mean_de, 2), "shift_mm": None},
             "confidence": 0.9,
         }
-        objs_hit = overlapping(objs, b.bbox, kinds=("Text", "Image", "Vector"), min_frac=0.02)
+        objs_hit = overlapping(objs, b.bbox, kinds=("Text", "OutlinedText", "Image", "Vector", "Rule", "Barcode"),
+                               min_frac=0.02)
         d["objects"] = [{"id": o.id, "kind": o.kind, **({"text": o.text} if o.text else {})} for o in objs_hit[:8]]
-        text_hit = any(o.kind == "Text" for o in objs_hit)
+        tinfo = structure.locate(tables, b.bbox, ppm) if tables else None
+        if tinfo is not None:
+            d["table"] = tinfo
+        d["category"] = category_of(objs_hit, tinfo)
+        if d["category"] == "Background" and _near_text_line(objs, b.bbox):
+            d["category"] = "Text"          # t.ex. tillagd text i förlängningen av en rad
+        text_hit = d["category"] in ("Text", "OutlinedText", "TableCell")
 
         if sub_fold.size and sub_fold.mean() > 0.3:
             d.update(kind="Uncertain", severity="Info", cause="fold", confidence=0.5)
@@ -145,11 +247,30 @@ def classify(blobs: list[Blob], maps: DiffMaps, objs: list[ObjEntry], ref_codes:
             out.append(d)
             continue
 
+        tone = _tone_offset(rL, sL, maps, b, objs_hit, ppm)
+        if tone is not None:
+            # hela objektet har samma ljushetsförskjutning: tonavvikelse (färg), inte form
+            if tone["delta_e"] < tol["delta_e"]:
+                continue
+            d["kind"] = "Color"
+            d["severity"] = "Major" if tone["delta_e"] > 2 * tol["delta_e"] else "Minor"
+            d["metrics"]["delta_e"] = round(tone["delta_e"], 2)
+            d["tone_offset_L"] = round(tone["offset"], 1)
+            out.append(d)
+            continue
         kind = _presence_kind(rL, sL, b, ppm)
+        if kind in ("Added", "Missing") and text_hit and _inside_word(objs_hit, b.bbox, ppm):
+            # ett streck mer eller mindre inne i ett befintligt ord (6 -> 8, g -> q) är
+            # en teckenändring, inte tillagt/saknat innehåll
+            kind = "Changed"
         if kind == "Changed" and not text_hit:
             kind = "Shape"
         # Flyttat? Sök referensinnehållet i provet (eller tvärtom för tillagt innehåll).
-        mt = _moved_test(rL, sL, b.bbox, ppm) if kind != "Added" else _moved_test(sL, rL, b.bbox, ppm)
+        # Linjer hoppas över: en saknad linje "hittas" annars i grannlinjen.
+        if d["category"] in ("TableRule", "Rule"):
+            mt = None
+        else:
+            mt = _moved_test(rL, sL, b.bbox, ppm) if kind != "Added" else _moved_test(sL, rL, b.bbox, ppm)
         if mt is not None:
             dx, dy, best, zero = mt
             if kind == "Added":
@@ -164,7 +285,11 @@ def classify(blobs: list[Blob], maps: DiffMaps, objs: list[ObjEntry], ref_codes:
             d["severity"] = "Major"
         out.append(d)
 
+    for d in out:
+        if d.get("category") in MIN_SEV and d["kind"] not in ("Uncertain",):
+            d["severity"] = _raise(d["severity"], MIN_SEV[d["category"]])
     out = _merge_moved(out, ppm)
+    out = _merge_table_rows(out, ppm)
     # En felaktig streckkod rapporteras en gång: ta bort övriga skillnader inom kodens yta
     # (staplar och klarskrift under koden).
     bad = [d for d in out if d["kind"] == "Barcode"]
@@ -219,3 +344,34 @@ def _merge_moved(diffs: list[dict], ppm: float) -> list[dict]:
         merged.append(a)
     merged.extend(d for k, d in enumerate(diffs) if k not in used)
     return merged
+
+
+def _merge_table_rows(diffs: list[dict], ppm: float) -> list[dict]:
+    """Flera "Flyttat" i samma tabellrad med samma förskjutning = en förskjuten rad."""
+    groups: dict = {}
+    rest = []
+    for d in diffs:
+        t = d.get("table")
+        if d["kind"] == "Moved" and t and t.get("element") == "cell" and d.get("shift_px"):
+            groups.setdefault((t["table"], t["row"]), []).append(d)
+        else:
+            rest.append(d)
+    out = list(rest)
+    for (tid, row), ds in groups.items():
+        if len(ds) == 1:
+            out.append(ds[0])
+            continue
+        sh = np.array([d["shift_px"] for d in ds], float)
+        if np.max(np.linalg.norm(sh - sh.mean(axis=0), axis=1)) > 0.15 * ppm:
+            out.extend(ds)
+            continue
+        x0 = min(d["bbox_px"][0] for d in ds); y0 = min(d["bbox_px"][1] for d in ds)
+        x1 = max(d["bbox_px"][0] + d["bbox_px"][2] for d in ds); y1 = max(d["bbox_px"][1] + d["bbox_px"][3] for d in ds)
+        m = dict(ds[0])
+        m["bbox_px"] = [x0, y0, x1 - x0, y1 - y0]
+        m["bbox_mm"] = [x0 / ppm, y0 / ppm, (x1 - x0) / ppm, (y1 - y0) / ppm]
+        m["area_mm2"] = sum(d["area_mm2"] for d in ds)
+        m["table"] = dict(ds[0]["table"], col=None, cell_text=None, row_shift=True)
+        m["objects"] = [o for d in ds for o in d["objects"]][:8]
+        out.append(m)
+    return out

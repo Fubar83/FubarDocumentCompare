@@ -17,6 +17,7 @@ class Masks:
     varnish: np.ndarray      # bool: endast form jämförs, inte färg
     variable: np.ndarray     # bool: variabel data (ignoreras)
     has_dieline: bool
+    braille: np.ndarray | None = None   # bool: punktskriftens alla cellägen (kontrolleras separat)
 
 
 def _poly_px(poly, geom: PageGeometry):
@@ -24,7 +25,8 @@ def _poly_px(poly, geom: PageGeometry):
     return np.stack([xs, ys], axis=1).astype(np.float32)
 
 
-def build(shape, geom: PageGeometry, spots: SpotAnalysis, user_masks: list, erode_mm: float = 0.3) -> Masks:
+def build(shape, geom: PageGeometry, spots: SpotAnalysis, user_masks: list, erode_mm: float = 0.3,
+          braille_mask: np.ndarray | None = None) -> Masks:
     h, w = shape[:2]
     ppm = geom.px_per_mm()
     inside = np.zeros((h, w), np.uint8)
@@ -66,4 +68,7 @@ def build(shape, geom: PageGeometry, spots: SpotAnalysis, user_masks: list, erod
     for p in spots.polygons("varnish"):
         if len(p) >= 3:
             cv2.fillPoly(varnish, [np.round(_poly_px(p, geom) * 16).astype(np.int32)], 1, shift=4)
-    return Masks(valid=valid, inside=inside_b, varnish=varnish.astype(bool), variable=variable, has_dieline=has_dieline)
+    if braille_mask is not None:
+        valid &= ~braille_mask
+    return Masks(valid=valid, inside=inside_b, varnish=varnish.astype(bool), variable=variable,
+                 has_dieline=has_dieline, braille=braille_mask)

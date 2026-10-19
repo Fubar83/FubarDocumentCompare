@@ -10,7 +10,8 @@ import cv2
 import numpy as np
 
 from . import __version__
-from . import barcode, classify, diff, folds, imageio, instances, mask, normalize, objmap, pdfspots, register
+from . import (barcode, braille, classify, diff, folds, imageio, instances, mask, normalize, objmap, pdfspots,
+               register, structure)
 from .render import get_renderer
 
 STAGES = ["render", "locate", "register", "normalize", "diff", "classify", "aggregate", "report"]
@@ -59,17 +60,33 @@ def run(spec: dict, progress=None) -> dict:
     spots = pdfspots.analyze(ref_bytes, page, rules)
     renderer = get_renderer("pdfium")
     ref = renderer.render(spots.sanitized_pdf, page, dpi, spec["reference"]["box"])
-    objs = objmap.build(ref_bytes, page, ref.geom)
-    masks = mask.build(ref.rgb.shape, ref.geom, spots, spec["masks"], erode_mm=tol["dieline_margin_mm"])
     ref_codes = barcode.detect(ref.rgb, dpi)
+    objs = objmap.build(spots.sanitized_pdf, page, ref.geom, [c.bbox for c in ref_codes])
+    tables = structure.detect(objs, ppm)
+    blines = braille.from_pdf(spots, ref_bytes, page, ref.geom)
+    bmask = braille.mask(ref.rgb.shape, blines, ppm) if blines else None
+    masks = mask.build(ref.rgb.shape, ref.geom, spots, spec["masks"], erode_mm=tol["dieline_margin_mm"],
+                       braille_mask=bmask)
+    text_mask = np.zeros(ref.rgb.shape[:2], bool)
+    pad = max(1, int(round(0.2 * ppm)))
+    for o in objs:
+        # Bara liten text (brödtext, tabellceller): rubriker har signal nog och deras
+        # rasterkanter mot färgad botten skulle ge falsklarm med den lägre tröskeln.
+        if o.kind == "Text" and (o.bbox[3] - o.bbox[1]) <= tol["text_small_mm"] * ppm:
+            x0, y0, x1, y1 = (int(round(v)) for v in o.bbox)
+            text_mask[max(0, y0 - pad):y1 + pad, max(0, x0 - pad):x1 + pad] = True
 
     # ---------- prov ----------
     kind = spec["sample"]["kind"]
     if kind == "pdf":
         sb = Path(spec["sample"]["path"]).read_bytes()
         sspots = pdfspots.analyze(sb, spec["sample"]["page"] - 1, rules)
-        sample_rgb = renderer.render(sspots.sanitized_pdf, spec["sample"]["page"] - 1, dpi, spec["reference"]["box"]).rgb
+        srend = renderer.render(sspots.sanitized_pdf, spec["sample"]["page"] - 1, dpi, spec["reference"]["box"])
+        sample_rgb = srend.rgb
         sample_dpi = dpi
+        sample_bdots, _ = braille.dots_from_spots(sspots, srend.geom)
+        if not sample_bdots:
+            sample_bdots, _ = braille.dots_from_text(sb, spec["sample"]["page"] - 1, srend.geom)
     else:
         sample_rgb, sample_dpi = imageio.read_scan(spec["sample"]["path"], spec["sample"].get("dpi"))
     T.add("render", time.perf_counter() - t0)
@@ -127,7 +144,8 @@ def run(spec: dict, progress=None) -> dict:
             period = normalize.estimate_screen_period_px(
                 cv2.cvtColor(aligned, cv2.COLOR_RGB2GRAY).astype(np.float32) / 255,
                 cv2.cvtColor(ref.rgb, cv2.COLOR_RGB2GRAY).astype(np.float32) / 255, masks.valid)
-            sigma = float(np.clip(0.55 * period, 1.0, 3.0)) if period else 1.0
+            # utan tonplattor går rastret inte att mäta: anta typiskt raster 70 linjer/cm
+            sigma = float(np.clip(0.55 * (period if period else dpi / (70 * 2.54)), 1.0, 3.0))
             ref_d = normalize.descreen(ref_f, sigma)
         smp_d = normalize.descreen(smp_f, sigma) if sigma > 0 else smp_f
         if k == 0 and is_scan and tol["normalize"]:
@@ -147,7 +165,7 @@ def run(spec: dict, progress=None) -> dict:
         T.add("normalize", time.perf_counter() - t0)
 
         t0 = time.perf_counter()
-        maps = diff.compute(ref_d, smp_d, masks.valid, masks.varnish, ppm, tol)
+        maps = diff.compute(ref_d, smp_d, masks.valid, masks.varnish, ppm, tol, text_mask)
         if tol["fold_detection"] and is_scan:
             fl, _ = folds.detect(maps.ref_lab[..., 0], maps.smp_lab[..., 0], masks.valid, ppm, tol["fold_band_mm"])
         else:
@@ -210,6 +228,9 @@ def run(spec: dict, progress=None) -> dict:
             q = q[:, :2] / q[:, 2:3]
             f = folds.Fold(tuple(q[0]), tuple(q[1]), bw)
             f = folds.refine_near(st["maps"].ref_lab[..., 0], st["maps"].smp_lab[..., 0], masks.valid, ppm, f)
+            if any(folds._point_line_dist(np.array(f.p0) / 2 + np.array(f.p1) / 2, np.array(g.p0), np.array(g.p1))
+                   < 2 * bw and folds._angle_diff(f.p0, f.p1, g.p0, g.p1) < 5 for g in fl_all):
+                continue
             zone = np.zeros((h_ref, w_ref), np.uint8)
             folds._draw_extended_band(zone, f, w_ref, h_ref)
             if (zone.astype(bool) & masks.valid).any():
@@ -230,7 +251,19 @@ def run(spec: dict, progress=None) -> dict:
         T.add("diff", time.perf_counter() - t0)
 
         t0 = time.perf_counter()
-        dl = classify.classify(blobs, maps, objs, ref_codes, aligned, band, reg.confidence, ppm, dpi, tol, inst.index)
+        dl = classify.classify(blobs, maps, objs, ref_codes, aligned, band, reg.confidence, ppm, dpi, tol, inst.index,
+                               tables=tables)
+        b_reads, b_stats = [], []
+        if blines:
+            if is_scan:
+                bd, b_reads, b_stats = braille.check_scan(maps.smp_lab[..., 0] - maps.ref_lab[..., 0], blines, ppm,
+                                                          inst.index, band)
+            else:
+                Hinv = np.linalg.inv(reg.H)
+                pts = np.array([[x, y, 1.0] for x, y in sample_bdots]).reshape(-1, 3) @ Hinv.T
+                pts = pts[:, :2] / pts[:, 2:3] if len(pts) else pts[:, :2]
+                bd, b_reads = braille.compare_dots(blines, [tuple(p) for p in pts], ppm, inst.index)
+            dl.extend(bd)
         for f in fl:
             zone = np.zeros(band.shape, np.uint8)
             folds._draw_extended_band(zone, f, band.shape[1], band.shape[0])
@@ -273,6 +306,7 @@ def run(spec: dict, progress=None) -> dict:
             "mean_delta_e": round(float(maps.delta_e[v].mean()), 3) if v.any() else None,
             "folds": [{"p0_mm": [f.p0[0] / ppm, f.p0[1] / ppm], "p1_mm": [f.p1[0] / ppm, f.p1[1] / ppm]} for f in fl],
             "color_matrix": None if color_M is None else np.round(color_M["M"], 4).tolist(),
+            "braille": {"read": b_reads, "stats": b_stats} if blines else None,
         })
         aligned_L.append(maps.smp_lab[..., 0].copy())
         bands.append(band)
@@ -315,7 +349,16 @@ def run(spec: dict, progress=None) -> dict:
                       "dieline": masks.has_dieline, "spot_colors": spots.spot_names,
                       "barcodes": [{"symbology": c.symbology, "data": c.data,
                                     "bbox_mm": [round(v / ppm, 2) for v in c.bbox]} for c in ref_codes],
-                      "objects": len(objs)},
+                      "objects": len(objs),
+                      "objects_by_kind": {k: sum(1 for o in objs if o.kind == k) for k in sorted({o.kind for o in objs})},
+                      "outlined_text_mm": [[round(v / ppm, 2) for v in o.bbox] for o in objs if o.kind == "OutlinedText"],
+                      "tables": [t.to_json(ppm) for t in tables],
+                      "braille": [{"line": ln.index, "text": ln.text, "source": ln.source,
+                                   "unicode": "".join(braille.unicode_of(c) for c in ln.cell_list()),
+                                   "cells": ln.kmax - ln.kmin + 1,
+                                   "bbox_mm": [round(v / ppm, 2) for v in ln.bbox()],
+                                   "dot_pitch_mm": round(ln.pitch / ppm, 2), "cell_pitch_mm": round(ln.cell_pitch / ppm, 2)}
+                                  for ln in blines]},
         "sample": {"path": spec["sample"]["path"], "sha256": _sha256(spec["sample"]["path"]), "kind": kind,
                    "dpi": sample_dpi, "size_px": [int(sample_rgb.shape[1]), int(sample_rgb.shape[0])],
                    "screen_period_px": None if period is None else round(period, 2), "descreen_sigma_px": round(sigma, 2),
@@ -406,6 +449,7 @@ def _consensus(aligned_L, bands, valid, existing, insts, ppm, tol):
 KIND_COLORS = {  # RGB
     "Missing": (220, 38, 38), "Added": (234, 88, 12), "Changed": (192, 38, 211), "Moved": (37, 99, 235),
     "Color": (22, 163, 74), "Shape": (147, 51, 234), "Barcode": (190, 18, 60), "Uncertain": (148, 163, 184),
+    "Braille": (13, 148, 136),
 }
 
 

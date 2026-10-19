@@ -18,8 +18,10 @@ from dataclasses import dataclass, field
 import pikepdf
 
 DEFAULT_RULES = {
+    # ordningen spelar roll: första matchande roll gäller
+    "braille": r"(?i)braille|punktskrift|blindskrift|emboss|prägl",
     "dieline": r"(?i)cut|die|stans|kiss|crease|perf",
-    "varnish": r"(?i)varnish|lack|foil|folie|hot ?stamp|emboss",
+    "varnish": r"(?i)varnish|lack|foil|folie|hot ?stamp",
 }
 
 IDENTITY = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
