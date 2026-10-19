@@ -87,6 +87,16 @@ SCHEMA = {
             "properties": {"reason": {"enum": ["variable", "user"]},
                            "rect_mm": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4}}}},
         "spot_rules": {"type": "object", "additionalProperties": {"type": "string"}},
+        "layers": {
+            "type": "object", "additionalProperties": False,
+            "properties": {
+                "include": {"type": "array", "items": {"type": "string"}},
+                "exclude": {"type": "array", "items": {"type": "string"}},
+                "exclude_spots": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        "text_compare": {"type": "boolean"},
+        "color_calibrated": {"type": "boolean"},
         "tolerance_profile": {"type": "string"},
         "tolerance_overrides": {"type": "object"},
         "outputs": {
@@ -104,6 +114,8 @@ DEFAULTS = {
     "instances": {"mode": "single", "rotations": [0, 90, 180, 270], "max_skew_deg": 4.0,
                   "systematic_ratio": 0.8, "consensus": True},
     "masks": [],
+    "layers": {},
+    "text_compare": True,
     "tolerance_profile": "label_standard",
     "tolerance_overrides": {},
     "outputs": {"dir": "out", "json": "result.json", "report_html": "report.html", "layers": True, "layer_dpi": 200},

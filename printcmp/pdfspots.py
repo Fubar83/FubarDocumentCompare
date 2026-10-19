@@ -201,6 +201,8 @@ def analyze(pdf_bytes: bytes, page_index: int = 0, rules: dict | None = None) ->
                 keep = False
             subpaths = []
             start = None
+        if o in ("Tj", "TJ", "'", '"') and role_of(fill_spot):
+            keep = False         # text i en icke-tryckande/utesluten dekorfärg
         if keep:
             new_ops.append(pikepdf.ContentStreamInstruction(operands, op))
 

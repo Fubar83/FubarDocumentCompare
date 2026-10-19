@@ -15,8 +15,15 @@ KIND_SV = {"Missing": "Saknas", "Added": "Tillagt", "Changed": "Ändrat", "Moved
            "Shape": "Form", "Barcode": "Streckkod", "Uncertain": "Osäker zon", "Braille": "Punktskrift"}
 CAT_SV = {"Text": "Text", "OutlinedText": "Konturerad text", "TableCell": "Tabellcell", "TableRule": "Tabellinje",
           "Barcode": "Streckkod", "Braille": "Punktskrift", "Image": "Bild", "Vector": "Grafik", "Rule": "Linje",
-          "Background": "Bakgrund"}
+          "Background": "Bakgrund", "TextLayer": "Textlager"}
 STATUS_SV = {"pass": "Godkänd", "warn": "Varning", "fail": "Fel"}
+LEVEL_SV = {"confirmed": ("Bekräftade avvikelser", "Oberoende belägg: avkodat innehåll skiljer, eller samma tydliga "
+                          "avvikelse på samma ställe i (nästan) alla etiketter."),
+            "high": ("Mycket sannolika", "Tydlig signal långt över toleransen, utanför veck."),
+            "probable": ("Troliga", "Signal över toleransen men nära den, eller i ett område med sämre underlag."),
+            "possible": ("Möjliga – kontrollera manuellt", "Osäkra zoner (veck, registrering), svag signal "
+                         "eller färg uppmätt med okalibrerad scanner.")}
+LEVEL_COLOR = {"confirmed": "#be123c", "high": "#dc2626", "probable": "#d97706", "possible": "#64748b"}
 STATUS_RGB = {"pass": (22, 163, 74), "warn": (217, 119, 6), "fail": (220, 38, 38)}
 
 
@@ -59,9 +66,29 @@ def _contents(result) -> str:
         rows.append(f"<li>Konturerad text: {len(ref['outlined_text_mm'])} rad(er)</li>")
     for c in ref.get("barcodes", []):
         rows.append(f"<li>Streckkod {html.escape(c['symbology'])}: {html.escape(c['data'])}</li>")
+    lay = ref.get("layers") or {}
+    if lay.get("ocgs"):
+        comp = lay.get("compared") or {}
+        items = []
+        for g in lay["ocgs"]:
+            on = comp.get(g["name"], True)
+            items.append(f'<span class="layer {"on" if on else "off"}">{"✓" if on else "✗"} {html.escape(g["name"])}</span>')
+        rows.append("<li>PDF-lager (✓ jämförs, ✗ uteslutet): " + " ".join(items) + "</li>")
+    if lay.get("spots"):
+        rows.append("<li>Dekorfärger: " + ", ".join(html.escape(x) for x in lay["spots"]) + "</li>")
     if not rows:
         return ""
     return "<h2>Identifierat i originalet</h2><ul>" + "".join(rows) + "</ul>"
+
+
+def _level_section(level: str, rows: list[str]) -> str:
+    if not rows:
+        return ""
+    title, desc = LEVEL_SV[level]
+    return (f'<h3 id="lv-{level}" style="--c:{LEVEL_COLOR[level]}">{title} ({len(rows)})</h3>'
+            f'<p class="muted lvdesc">{desc}</p>'
+            '<table><thead><tr><th>#</th><th>Säkerhet</th><th>Allvar</th><th>Typ</th><th>Instanser</th><th>Position</th>'
+            '<th>Detaljer</th><th>Utsnitt</th></tr></thead><tbody>' + "".join(rows) + '</tbody></table>')
 
 
 def write_html(path: Path, result: dict, ref_rgb, sample_rgb, insts, dpi, sample_dpi, layers_dir: Path | None):
@@ -92,7 +119,7 @@ def write_html(path: Path, result: dict, ref_rgb, sample_rgb, insts, dpi, sample
             any_ref = next(iter(layers.values()))[0]
             layer_dpi = dpi * any_ref.shape[1] / ref_rgb.shape[1]
 
-    rows = []
+    rows_by_level = {k: [] for k in LEVEL_SV}
     for d in result["differences"]:
         thumbs = ""
         if d.get("bbox_mm") and layers and d["instances"] and d["kind"] != "Uncertain":
@@ -152,6 +179,20 @@ def write_html(path: Path, result: dict, ref_rgb, sample_rgb, insts, dpi, sample
                     details.append("Saknade punkter: " + ", ".join(map(str, bi["missing_dots"])))
                 if bi.get("extra_dots"):
                     details.append("Extra punkter: " + ", ".join(map(str, bi["extra_dots"])))
+        for tc in (d.get("text_change") or [])[:4]:
+            kind_sv = {"Changed": "ändrad", "Missing": "borttagen", "Added": "tillagd", "Moved": "flyttad",
+                       "Style": "typsnitt/storlek"}.get(tc.get("kind"), "")
+            if tc.get("kind") == "Style":
+                details.append(f"Text \u201d{html.escape(tc['from'])}\u201d: {html.escape(tc.get('font_from') or '')} "
+                               f"{tc.get('size_from')} pt → {html.escape(tc.get('font_to') or '')} {tc.get('size_to')} pt")
+            elif tc.get("kind") == "Moved":
+                details.append(f"Text \u201d{html.escape(tc['from'])}\u201d flyttad {tc.get('shift_mm')} mm")
+            else:
+                diff_ = f' <span class=muted>({html.escape(tc["diff"])})</span>' if tc.get("diff") else ""
+                details.append(f"Text {kind_sv}: \u201d<del>{html.escape(tc.get('from', ''))}</del>\u201d → "
+                               f"\u201d<ins>{html.escape(tc.get('to', ''))}</ins>\u201d{diff_}")
+        if d.get("text_only"):
+            details.append("<i>Endast i textlagret – syns inte i tryck</i>")
         if d.get("barcode"):
             bcd = d["barcode"]
             details.append(f"Streckkod: väntat {html.escape(str(bcd.get('expected')))}, läst {html.escape(str(bcd.get('read')))}")
@@ -159,8 +200,14 @@ def write_html(path: Path, result: dict, ref_rgb, sample_rgb, insts, dpi, sample
             details.append({"fold": "Veck", "registration": "Osäker registrering"}.get(d["cause"], d["cause"]))
         if d.get("source") == "consensus":
             details.append("Hittad via jämförelse mellan instanser")
-        rows.append(
+        cert = d.get("certainty") or {"level": "possible", "score": 0, "reasons": []}
+        lvl_col = LEVEL_COLOR[cert["level"]]
+        cert_html = (f'<div class=cert><div class=bar><i style="width:{cert["score"]}%;background:{lvl_col}"></i></div>'
+                     f'<b>{cert["score"]} %</b></div><ul class=why>'
+                     + "".join(f"<li>{html.escape(r)}</li>" for r in cert["reasons"]) + "</ul>")
+        rows_by_level[cert["level"]].append(
             f'<tr><td class=num>{d["id"]}</td>'
+            f'<td>{cert_html}</td>'
             f'<td><span class="sev {SEV_CLASS[d["severity"]]}">{d["severity"]}</span></td>'
             f'<td><span class=kind style="--k: rgb{KIND_COLORS.get(d["kind"], (0, 0, 0))}">{KIND_SV.get(d["kind"], d["kind"])}</span></td>'
             f'<td>{insts_txt}</td><td>{where}</td><td>{"<br>".join(details) or "–"}</td><td>{thumbs}</td></tr>')
@@ -199,7 +246,15 @@ th,td{{text-align:left;vertical-align:top;padding:10px;border-bottom:1px solid v
 td.num{{color:var(--muted)}} .sev{{font-size:12px;font-weight:600;padding:2px 8px;border-radius:99px;color:#fff}}
 .sev.crit{{background:var(--crit)}} .sev.major{{background:var(--major)}} .sev.minor{{background:var(--minor)}} .sev.info{{background:var(--info)}}
 .kind{{border-left:4px solid var(--k);padding-left:6px;font-weight:600}}
-.pair{{display:flex;gap:8px;flex-wrap:wrap}} figure{{margin:0}} figcaption{{font-size:12px;color:var(--muted);margin-top:4px}}
+.pair{{display:flex;gap:8px;flex-wrap:wrap}}
+.layer{{display:inline-block;padding:1px 8px;margin:2px;border-radius:99px;border:1px solid var(--line);font-size:12px}}
+.layer.off{{color:var(--muted);text-decoration:line-through}} del{{color:var(--major)}} ins{{color:var(--pass);text-decoration:none;font-weight:600}}
+.levels{{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:8px 0 16px}}
+.lv{{display:block;text-decoration:none;color:var(--fg);background:var(--card);border:1px solid var(--line);border-left:5px solid var(--c);border-radius:10px;padding:10px 12px}}
+.lv b{{display:block;font-size:22px;color:var(--c)}}
+h3{{font-size:15px;margin:28px 0 4px;padding-left:10px;border-left:5px solid var(--c)}} .lvdesc{{margin:0 0 10px 15px}}
+.cert{{display:flex;align-items:center;gap:8px;min-width:120px}} .bar{{flex:1;height:8px;background:var(--line);border-radius:99px;overflow:hidden}}
+.bar i{{display:block;height:100%}} ul.why{{margin:6px 0 0;padding-left:16px;font-size:12px;color:var(--muted);max-width:260px}} figure{{margin:0}} figcaption{{font-size:12px;color:var(--muted);margin-top:4px}}
 .gallery{{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}}
 .inst{{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px}}
 .st.pass{{color:var(--pass)}} .st.warn{{color:var(--minor)}} .st.fail{{color:var(--major)}}
@@ -213,13 +268,13 @@ td.num{{color:var(--muted)}} .sev{{font-size:12px;font-weight:600;padding:2px 8p
 <div class=card><b style="color:var(--minor)">{sm["instances_warn"]}</b>med varning</div>
 <div class=card><b style="color:var(--pass)">{sm["instances_pass"]}</b>godkända</div>
 <div class=card><b>{sm["differences"]}</b>skillnader ({sm["systematic"]} systematiska)</div>
-<div class=card><b>{sh["rotation_deg"]:+.2f}°</b>arkets rotation</div>
+<div class=card><b>{(sh["rotation_deg"] + 90) % 180 - 90:+.2f}°</b>arkets snedställning</div>
 </div>
 {_contents(result)}
 <h2>Ark</h2><img src="{imageio.png_data_uri(sheet)}" alt="Arköversikt">
-<h2>Skillnader</h2>
-<table><thead><tr><th>#</th><th>Allvar</th><th>Typ</th><th>Instanser</th><th>Position</th><th>Detaljer</th><th>Utsnitt</th></tr></thead>
-<tbody>{"".join(rows) or '<tr><td colspan=7>Inga skillnader hittades.</td></tr>'}</tbody></table>
+<h2>Skillnader, säkrast först</h2>
+<div class=levels>{"".join(f'<a class=lv href="#lv-{k}" style="--c:{LEVEL_COLOR[k]}"><b>{len(v)}</b>{LEVEL_SV[k][0]}</a>' for k, v in rows_by_level.items())}</div>
+{"".join(_level_section(k, v) for k, v in rows_by_level.items()) or '<p>Inga skillnader hittades.</p>'}
 <h2>Instanser</h2><div class=gallery>{"".join(gallery)}</div>
 <p class=muted>Tider (ms): {", ".join(f"{k} {v}" for k, v in result["timing_ms"].items())}</p>
 </main></body></html>"""

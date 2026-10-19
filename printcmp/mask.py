@@ -48,7 +48,9 @@ def build(shape, geom: PageGeometry, spots: SpotAnalysis, user_masks: list, erod
 
     er = max(1, int(round(erode_mm * ppm)))
     k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * er + 1, 2 * er + 1))
-    valid = cv2.erode(inside, k).astype(bool)
+    # utanför bilden räknas som utanför etiketten (annars eroderas inte stanslinjen där den
+    # sammanfaller med sidkanten)
+    valid = cv2.erode(inside, k, borderType=cv2.BORDER_CONSTANT, borderValue=0).astype(bool)
     if not has_dieline:
         valid[:er, :] = valid[-er:, :] = False
         valid[:, :er] = valid[:, -er:] = False

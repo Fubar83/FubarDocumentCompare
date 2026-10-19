@@ -14,7 +14,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from printcmp import barcode, braille, jobspec, objmap, pdfspots, pipeline, register, render, structure  # noqa: E402
+from printcmp import barcode, braille, jobspec, layers, objmap, pdfspots, pipeline, register, render, structure  # noqa: E402
 from tools.testgen import labelpdf  # noqa: E402
 from tools.testgen.templates import nutrition_grid, nutrition_open, oat_drink  # noqa: E402
 
@@ -121,6 +121,67 @@ class TestPdfVsPdf(unittest.TestCase):
         self.assertTrue(hits, "ändringen hittades inte")
         texts = " ".join(o.get("text", "") for d in hits for o in d["objects"])
         self.assertIn("10", texts)
+
+
+class TestLayersAndText(TestPdfVsPdf):
+    def _run_spec(self, ref_spec, smp_spec, **extra):
+        tmp = Path(tempfile.mkdtemp())
+        (tmp / "ref.pdf").write_bytes(labelpdf.render_pdf(ref_spec))
+        (tmp / "smp.pdf").write_bytes(labelpdf.render_pdf(smp_spec))
+        js = {"schema": jobspec.SCHEMA_ID, "reference": {"path": "ref.pdf"}, "sample": {"path": "smp.pdf"},
+              "work_dpi": 300, "outputs": {"dir": "out", "layers": False, "report_html": ""}}
+        js.update(extra)
+        return pipeline.run(jobspec.normalize(js, base_dir=tmp))
+
+    @staticmethod
+    def _layered():
+        s = oat_drink()
+        for e in s["elements"]:
+            if e["id"] in ("ingr1", "ingr2"):
+                e["layer"] = "Ingredienser SV"
+            elif e["type"] == "text":
+                e["layer"] = "Text"
+        return s
+
+    def test_list_and_filter_layers(self):
+        pdf = labelpdf.render_pdf(self._layered())
+        info = layers.list_layers(pdf)
+        self.assertEqual({g["name"] for g in info.ocgs}, {"Text", "Ingredienser SV"})
+        full = render.PdfiumRenderer().render(pdf, 0, 150).rgb
+        f2, dec = layers.filter_pdf(pdf, 0, exclude=["Text"])
+        self.assertEqual(dec, {"Text": False, "Ingredienser SV": True})
+        part = render.PdfiumRenderer().render(f2, 0, 150).rgb
+        self.assertGreater(int((part.astype(int) - full).sum()), 0, "dolt lager syns fortfarande")
+        words = [o.text for o in objmap.build(f2, 0, render.PdfiumRenderer().render(f2, 0, 150).geom) if o.kind == "Text"]
+        self.assertIn("Ingredienser:", words)
+        self.assertNotIn("Ekologisk", words)
+
+    def test_excluded_layer_change_is_ignored(self):
+        a = self._layered()
+        b = copy.deepcopy(a)
+        el = next(e for e in b["elements"] if e["id"] == "ingr1")
+        el["text"] = el["text"].replace("10 %", "18 %")
+        res = self._run_spec(a, b, layers={"exclude": ["Ingredienser.*"]})
+        self.assertEqual([d for d in res["differences"] if d["kind"] != "Uncertain"], [])
+        res = self._run_spec(a, b)
+        self.assertTrue(any(d.get("text_change") for d in res["differences"]))
+
+    def test_text_change_and_text_only(self):
+        a = oat_drink()
+        b = copy.deepcopy(a)
+        el = next(e for e in b["elements"] if e["id"] == "ingr1")
+        el["text"] = el["text"].replace("10 %", "18 %")
+        # vit text på vit botten: syns inte i tryck, men finns i textlagret
+        a["elements"].append({"id": "hidden", "type": "text", "text": "Batch A", "font": "DejaVuSans", "size_pt": 5,
+                              "pos_mm": [45, 33], "color": {"cmyk": [0, 0, 0, 0]}})
+        b["elements"].append({"id": "hidden", "type": "text", "text": "Batch B", "font": "DejaVuSans", "size_pt": 5,
+                              "pos_mm": [45, 33], "color": {"cmyk": [0, 0, 0, 0]}})
+        res = self._run_spec(a, b)
+        tcs = [(tc["from"], tc["to"]) for d in res["differences"] for tc in d.get("text_change", [])]
+        self.assertIn(("10", "18"), tcs)
+        only = [d for d in res["differences"] if d.get("text_only")]
+        self.assertEqual([(tc["from"], tc["to"]) for d in only for tc in d["text_change"]], [("A", "B")])
+        self.assertTrue(all(d["certainty"]["level"] == "confirmed" for d in res["differences"]))
 
 
 class TestCategoriesPdfVsPdf(TestPdfVsPdf):

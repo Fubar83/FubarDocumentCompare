@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 
 from . import __version__
-from . import (barcode, braille, classify, diff, folds, imageio, instances, mask, normalize, objmap, pdfspots,
+from . import (barcode, braille, certainty, classify, layers, textdiff, diff, folds, imageio, instances, mask, normalize, objmap, pdfspots,
                register, structure)
 from .render import get_renderer
 
@@ -51,12 +51,17 @@ def run(spec: dict, progress=None) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     rules = dict(pdfspots.DEFAULT_RULES)
     rules.update(spec.get("spot_rules") or {})
+    lspec = spec.get("layers") or {}
+    rules.update(layers.spot_rules(exclude_spots=lspec.get("exclude_spots")))
 
     # ---------- referens ----------
     t0 = time.perf_counter()
     prog("render", 0.0)
     ref_bytes = Path(spec["reference"]["path"]).read_bytes()
     page = spec["reference"]["page"] - 1
+    layer_report = {"reference": _layer_json(layers.list_layers(ref_bytes, page)), "rules": lspec}
+    ref_bytes, layer_report["reference"]["compared"] = layers.filter_pdf(ref_bytes, page, lspec.get("include"),
+                                                                         lspec.get("exclude"))
     spots = pdfspots.analyze(ref_bytes, page, rules)
     renderer = get_renderer("pdfium")
     ref = renderer.render(spots.sanitized_pdf, page, dpi, spec["reference"]["box"])
@@ -80,6 +85,9 @@ def run(spec: dict, progress=None) -> dict:
     kind = spec["sample"]["kind"]
     if kind == "pdf":
         sb = Path(spec["sample"]["path"]).read_bytes()
+        layer_report["sample"] = _layer_json(layers.list_layers(sb, spec["sample"]["page"] - 1))
+        sb, layer_report["sample"]["compared"] = layers.filter_pdf(sb, spec["sample"]["page"] - 1,
+                                                                   lspec.get("include"), lspec.get("exclude"))
         sspots = pdfspots.analyze(sb, spec["sample"]["page"] - 1, rules)
         srend = renderer.render(sspots.sanitized_pdf, spec["sample"]["page"] - 1, dpi, spec["reference"]["box"])
         sample_rgb = srend.rgb
@@ -179,6 +187,7 @@ def run(spec: dict, progress=None) -> dict:
     # korsar streckkoder eller tryckta ytor).
     # Punkter längs varje veckssegment (i arkets koordinater) klustras och anpassas med
     # PCA till en linje per veck – det ger rätt vinkel även långt från där vecket syntes.
+    _drop_systematic_fold_candidates(states, ref.rgb.shape[:2], ppm, sample_dpi / 25.4)
     segs = []
     for st in states:
         H = st["reg"].H
@@ -213,6 +222,25 @@ def run(spec: dict, progress=None) -> dict:
         e = vt[0]
         merged.append((mu - 1e5 * e, mu + 1e5 * e, bw))
     h_ref, w_ref = ref.rgb.shape[:2]
+    if merged:
+        # Pröva varje veckhypotes mot alla etiketter den korsar. Ett verkligt veck syns i
+        # (nästan) alla; en enstaka kant i en etikett (ett tryck- eller originalfel) gör inte det.
+        rms = [folds.residual_map(st["maps"].ref_lab[..., 0], st["maps"].smp_lab[..., 0], masks.valid, ppm)
+               for st in states]
+        keep = []
+        for p0, p1, bw in merged:
+            n_cross = n_sup = 0
+            for st, rm in zip(states, rms):
+                q = np.array([[*p0, 1.0], [*p1, 1.0]]) @ np.linalg.inv(st["reg"].H).T
+                q = q[:, :2] / q[:, 2:3]
+                frac, n = folds.support(rm, folds.Fold(tuple(q[0]), tuple(q[1]), bw))
+                if n * rm["ds"] < 8 * ppm:          # korsar för lite ljust papper för att avgöra
+                    continue
+                n_cross += 1
+                n_sup += frac >= 0.4
+            if n_cross <= 1 or n_sup >= max(2, int(np.ceil(0.5 * n_cross))):
+                keep.append((p0, p1, bw))
+        merged = keep
     for st in states:
         Hinv = np.linalg.inv(st["reg"].H)
         fl_all = []
@@ -234,6 +262,10 @@ def run(spec: dict, progress=None) -> dict:
             zone = np.zeros((h_ref, w_ref), np.uint8)
             folds._draw_extended_band(zone, f, w_ref, h_ref)
             if (zone.astype(bool) & masks.valid).any():
+                # bandets bredd efter hur långt vecket faktiskt påverkar bilden
+                hw = folds.estimate_halfwidth(st["maps"].d_struct, st["maps"].smp_lab[..., 0] - st["maps"].ref_lab[..., 0],
+                                              masks.valid, ppm, f, 0.6 * tol["struct_dl"])
+                f = folds.Fold(f.p0, f.p1, max(f.band_px, hw + 0.5 * ppm))
                 fl_all.append(f)
         band = np.zeros((h_ref, w_ref), np.uint8)
         for f in fl_all:
@@ -304,7 +336,8 @@ def run(spec: dict, progress=None) -> dict:
             "registration_rms_px": None if not np.isfinite(reg.rms_px) else round(reg.rms_px, 3),
             "registration_tiles": reg.n_tiles,
             "mean_delta_e": round(float(maps.delta_e[v].mean()), 3) if v.any() else None,
-            "folds": [{"p0_mm": [f.p0[0] / ppm, f.p0[1] / ppm], "p1_mm": [f.p1[0] / ppm, f.p1[1] / ppm]} for f in fl],
+            "folds": [{"p0_mm": [f.p0[0] / ppm, f.p0[1] / ppm], "p1_mm": [f.p1[0] / ppm, f.p1[1] / ppm],
+                       "band_mm": round(f.band_px / ppm, 2)} for f in fl],
             "color_matrix": None if color_M is None else np.round(color_M["M"], 4).tolist(),
             "braille": {"read": b_reads, "stats": b_stats} if blines else None,
         })
@@ -312,6 +345,16 @@ def run(spec: dict, progress=None) -> dict:
         bands.append(band)
         if spec["outputs"]["layers"]:
             _save_layers(layers_dir, inst.index, ref.rgb, aligned, dl, layer_scale)
+
+    # ---------- text (PDF mot PDF) ----------
+    text_diffs = []
+    if kind == "pdf" and spec.get("text_compare", True) and states:
+        t0 = time.perf_counter()
+        rw = textdiff.extract_words(spots.sanitized_pdf, page, ref.geom)
+        sw = textdiff.extract_words(sspots.sanitized_pdf, spec["sample"]["page"] - 1, srend.geom)
+        text_diffs = textdiff.compare(rw, sw, states[0]["reg"].H, ppm)
+        all_diffs[:] = _link_text(all_diffs, text_diffs, states[0]["inst"].index, ppm)
+        T.add("text", time.perf_counter() - t0)
 
     # ---------- konsensus ----------
     t0 = time.perf_counter()
@@ -324,7 +367,13 @@ def run(spec: dict, progress=None) -> dict:
                     "reason": "instance_not_found", "found": len(insts), "expected": expected,
                     "bbox_mm": None, "bbox_px": None, "objects": [], "metrics": {}, "confidence": 1.0})
     sev_rank = {s: i for i, s in enumerate(classify.SEV)}
-    agg.sort(key=lambda d: (-sev_rank[d["severity"]], not d.get("systematic"), d["instances"][:1] or [0]))
+    inst_folds = {io["index"]: io["folds"] for io in inst_out}
+    for d in agg:
+        d["certainty"] = certainty.assess(d, len(insts), tol, kind, inst_folds,
+                                          color_calibrated=bool(spec.get("color_calibrated")))
+    # säkrast först, sedan allvar
+    agg.sort(key=lambda d: (certainty.LEVELS.index(d["certainty"]["level"]), -sev_rank[d["severity"]],
+                            -d["certainty"]["score"], not d.get("systematic"), d["instances"][:1] or [0]))
     for i, d in enumerate(agg):
         d["id"] = i + 1
         d.pop("instance", None)
@@ -353,6 +402,7 @@ def run(spec: dict, progress=None) -> dict:
                       "objects_by_kind": {k: sum(1 for o in objs if o.kind == k) for k in sorted({o.kind for o in objs})},
                       "outlined_text_mm": [[round(v / ppm, 2) for v in o.bbox] for o in objs if o.kind == "OutlinedText"],
                       "tables": [t.to_json(ppm) for t in tables],
+                      "layers": layer_report.get("reference"),
                       "braille": [{"line": ln.index, "text": ln.text, "source": ln.source,
                                    "unicode": "".join(braille.unicode_of(c) for c in ln.cell_list()),
                                    "cells": ln.kmax - ln.kmin + 1,
@@ -468,3 +518,107 @@ def _save_layers(layers_dir: Path, idx: int, ref_rgb, aligned, diffs, scale):
     imageio.write_png(layers_dir / f"inst{idx:03d}_ref.png", r)
     imageio.write_png(layers_dir / f"inst{idx:03d}_sample.png", s)
     imageio.write_png(layers_dir / f"inst{idx:03d}_overlay.png", ov)
+
+
+def _line_params(p0, p1, center):
+    """Vinkel (grader, 0–180) och signerat avstånd från center till linjen."""
+    p0, p1 = np.asarray(p0, float), np.asarray(p1, float)
+    d = p1 - p0
+    ang = float(np.degrees(np.arctan2(d[1], d[0])) % 180)
+    a = np.radians(ang)
+    n = np.array([-np.sin(a), np.cos(a)])
+    return ang, float(np.dot(p0 - np.asarray(center, float), n))
+
+
+def _drop_systematic_fold_candidates(states, ref_shape, ppm, sppm):
+    """Ta bort veckkandidater som återkommer på samma ställe i många etiketter.
+
+    En ändring i originalet (t.ex. en flyttad textrad) ger en rak kant i residualen på
+    samma etikettposition i alla instanser. Ett verkligt veck är en rak linje i arkets
+    koordinater: återkommer det i flera etiketter ligger träffarna på en och samma
+    arklinje. Kandidater som återkommer i minst tre etiketter utan att vara kolinjära
+    på arket är alltså ändringar i originalet, inte veck.
+    """
+    h_ref, w_ref = ref_shape
+    c_lab = (w_ref / 2, h_ref / 2)
+    items = []      # (state index, fold, label-ang, label-rho, sheet-ang, sheet-rho)
+    for i, st in enumerate(states):
+        H = st["reg"].H
+        for f in st["fl"]:
+            a_l, r_l = _line_params(f.p0, f.p1, c_lab)
+            q = np.array([[*f.p0, 1.0], [*f.p1, 1.0]]) @ H.T
+            q = q[:, :2] / q[:, 2:3]
+            a_s, r_s = _line_params(q[0], q[1], (0.0, 0.0))
+            items.append((i, f, a_l, r_l, a_s, r_s))
+    n_inst = len(states)
+    need = max(3, int(np.ceil(0.4 * n_inst)))
+    drop = set()
+    for k, (i, f, a_l, r_l, a_s, r_s) in enumerate(items):
+        same = []
+        for j, (i2, f2, a2, r2, as2, rs2) in enumerate(items):
+            da = abs(a2 - a_l)
+            da = min(da, 180 - da)
+            if da < 8 and abs(r2 - r_l) < 2.5 * ppm:
+                same.append(j)
+        insts = {items[j][0] for j in same}
+        if len(insts) < need:
+            continue
+        # kolinjära på arket? (vinkel nära 0/180 kan byta tecken på avståndet)
+        rs = []
+        for j in same:
+            a2, r2 = items[j][4], items[j][5]
+            rs.append(-r2 if abs(a2 - a_s) > 90 else r2)
+        if np.ptp(rs) > 3.0 * sppm:
+            drop.update(same)
+    for i, st in enumerate(states):
+        st["fl"] = [f for k, (i2, f, *_r) in enumerate(items) if i2 == i and k not in drop]
+
+
+def _layer_json(info) -> dict:
+    return {"ocgs": info.ocgs, "spots": info.spots}
+
+
+TEXT_KIND_SV = {"Changed": "ändrad", "Missing": "borttagen", "Added": "tillagd", "Moved": "flyttad", "Style": "typsnitt/storlek"}
+
+
+def _link_text(diffs: list[dict], tdiffs: list[dict], instance: int, ppm: float) -> list[dict]:
+    """Koppla textlagrets skillnader till de grafiska.
+
+    En grafisk skillnad som överlappar en textskillnad får texten (”10 %” -> ”18 %”).
+    En textskillnad utan grafisk motsvarighet rapporteras separat: den syns inte i tryck
+    (t.ex. fel i ToUnicode-tabellen, vit/dold text) men påverkar sökbarhet och tillgänglighet.
+    """
+    def ov(a, b, pad=0.3):
+        ax, ay, aw, ah = a
+        bx, by, bw, bh = b
+        return not (ax - pad > bx + bw or bx - pad > ax + aw or ay - pad > by + bh or by - pad > ay + ah)
+
+    used = set()
+    for d in diffs:
+        if d.get("instance") != instance or not d.get("bbox_mm") or d["kind"] == "Uncertain":
+            continue
+        hits = [k for k, t in enumerate(tdiffs) if ov(d["bbox_mm"], t["bbox_mm"])]
+        if hits:
+            d["text_change"] = [tdiffs[k]["text"] | {"kind": tdiffs[k]["kind"]} for k in hits[:6]]
+            if d.get("category") in (None, "Background", "Vector", "Image"):
+                d["category"] = "Text"
+            # en textändring som skjuter resten av raden är en ändring, inte en flytt
+            if d["kind"] in ("Moved", "Shape") and any(tdiffs[k]["kind"] in ("Changed", "Added", "Missing")
+                                                       for k in hits):
+                d["kind"] = "Changed"
+            used.update(hits)
+    out = list(diffs)
+    for k, t in enumerate(tdiffs):
+        if k in used:
+            continue
+        # syns inte grafiskt
+        visible_kinds = {"Style": "Minor"}
+        out.append({"instance": instance, "kind": "Changed" if t["kind"] == "Style" else t["kind"],
+                    "severity": visible_kinds.get(t["kind"], "Minor"), "category": "TextLayer", "source": "text",
+                    "bbox_px": t["bbox_px"], "bbox_mm": t["bbox_mm"],
+                    "area_mm2": t["bbox_mm"][2] * t["bbox_mm"][3], "objects": [],
+                    "metrics": {"delta_l": None, "delta_e": None, "shift_mm": t["text"].get("shift_mm")},
+                    "confidence": 0.9, "text_change": [t["text"] | {"kind": t["kind"]}],
+                    "text_only": True})
+    return out
+

@@ -396,8 +396,16 @@ def check_scan(resid_L: np.ndarray, lines: list[BrailleLine], ppm: float, instan
         read_cells = [frozenset(observed.get(k, set())) if k not in unsure else None for k in range(ln.kmin, ln.kmax + 1)]
         reads.append("".join("~" if c is None else cells_to_text([c]) for c in read_cells))
         for k in sorted((set(missing) | set(extra)) - unsure):
-            diffs.append(_diff_for_cell(ln, k, frozenset(observed.get(k, set())), missing.get(k, ()),
-                                        extra.get(k, ()), ppm, instance))
+            dcell = _diff_for_cell(ln, k, frozenset(observed.get(k, set())), missing.get(k, ()),
+                                   extra.get(k, ()), ppm, instance)
+            # signal: präglingens kontrast (präglat/tomt) och hur tydligt avvikande lägen ligger
+            # på fel sida om tröskeln (0 = på tröskeln, 1 = som en typisk präglad/tom punkt)
+            marg = [((t_miss - s) / max(P - A, 1e-6)) / 0.4 for kk, n, s, e in positions if kk == k and e and s < t_miss]
+            marg += [((s - t_extra) / max(P - A, 1e-6)) / 0.4 for kk, n, s, e in positions
+                     if kk == k and not e and n in extra.get(k, ())]
+            dcell["braille"]["contrast"] = round(P / max(A, 1e-6), 2)
+            dcell["braille"]["margin"] = round(float(min(marg)) if marg else 0.0, 2)
+            diffs.append(dcell)
     return diffs, reads, stats
 
 

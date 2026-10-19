@@ -289,9 +289,20 @@ def classify(blobs: list[Blob], maps: DiffMaps, objs: list[ObjEntry], ref_codes:
         if d.get("category") in MIN_SEV and d["kind"] not in ("Uncertain",):
             d["severity"] = _raise(d["severity"], MIN_SEV[d["category"]])
     out = _merge_moved(out, ppm)
+    out = _merge_object_color(out, ppm)
     out = _merge_table_rows(out, ppm)
     # En felaktig streckkod rapporteras en gång: ta bort övriga skillnader inom kodens yta
     # (staplar och klarskrift under koden).
+    # en felaktig kod ska ge en rad, även om flera blobbar träffade den
+    seen_codes, dedup = set(), []
+    for d in out:
+        if d["kind"] == "Barcode":
+            key = d["barcode"].get("expected")
+            if key in seen_codes:
+                continue
+            seen_codes.add(key)
+        dedup.append(d)
+    out = dedup
     bad = [d for d in out if d["kind"] == "Barcode"]
     if bad:
         keep = []
@@ -305,6 +316,33 @@ def classify(blobs: list[Blob], maps: DiffMaps, objs: list[ObjEntry], ref_codes:
                     continue
             keep.append(d)
         out = keep
+    return out
+
+
+def _merge_object_color(diffs: list[dict], ppm: float) -> list[dict]:
+    """En tonavvikelse över ett helt objekt rapporteras en gång, inte en gång per glyf/bit."""
+    groups: dict = {}
+    out = []
+    for d in diffs:
+        if d["kind"] == "Color" and d.get("objects") and d.get("tone_offset_L") is not None:
+            groups.setdefault(d["objects"][0]["id"], []).append(d)
+        else:
+            out.append(d)
+    for g in groups.values():
+        if len(g) == 1:
+            out.append(g[0])
+            continue
+        x0 = min(d["bbox_px"][0] for d in g)
+        y0 = min(d["bbox_px"][1] for d in g)
+        x1 = max(d["bbox_px"][0] + d["bbox_px"][2] for d in g)
+        y1 = max(d["bbox_px"][1] + d["bbox_px"][3] for d in g)
+        m = dict(max(g, key=lambda d: d["area_mm2"]))
+        m["bbox_px"] = [x0, y0, x1 - x0, y1 - y0]
+        m["bbox_mm"] = [x0 / ppm, y0 / ppm, (x1 - x0) / ppm, (y1 - y0) / ppm]
+        m["area_mm2"] = sum(d["area_mm2"] for d in g)
+        m["metrics"] = dict(m["metrics"], delta_e=round(float(np.median([d["metrics"]["delta_e"] for d in g])), 2))
+        m["parts"] = len(g)
+        out.append(m)
     return out
 
 

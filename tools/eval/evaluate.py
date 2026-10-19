@@ -132,6 +132,11 @@ def evaluate_case(result: dict, truth: dict) -> dict:
                                       W * dpi / 25.4, H * dpi / 25.4))
     t_instances = [i["index"] for i in truth["instances"]]
     folds_by_inst = {u["instance"]: u["lines"] for u in truth.get("expect_uncertain", [])}
+    # scanartefakter (damm på glaset): en detektion där är korrekt men inget tryckfel
+    arts_by_inst = defaultdict(list)
+    for a_ in truth.get("scan_artifacts", []):
+        arts_by_inst[a_["instance"]].append(a_["bbox_ref_mm"])
+    scan_flagged = 0
 
     # expandera detektioner per (facit-)instans
     dets = []
@@ -179,6 +184,9 @@ def evaluate_case(result: dict, truth: dict) -> dict:
             if b in matched_d:
                 continue
             if any(match_score(d["box"], t["box"], pad=0.6) > 0 for t in T):
+                continue
+            if any(match_score(d["box"], a_, pad=0.4) > 0 for a_ in arts_by_inst.get(ti, [])):
+                scan_flagged += 1
                 continue
             if d["kind"] == "Uncertain":
                 if _near_fold(d["box"], folds_by_inst.get(ti, []), 3.0):
@@ -237,6 +245,7 @@ def evaluate_case(result: dict, truth: dict) -> dict:
         "uncertain_extra": uncertain_extra,
         "class_ok": [cls_ok, cls_n],
         "class_misses": cls_misses,
+        "scan_artifacts_flagged": scan_flagged,
         "category_ok": {k: v for k, v in by_cat.items()},
         "category_misses": cat_misses[:20],
         "systematic_ok": [sys_ok, sys_n],

@@ -115,7 +115,7 @@ rubrik, punktskrift, streckkod/QR) och riktade mutationer.
 |---|---|---|---|---|---|
 | Instanser hittade | 100 % | 100 % | 100 % | 100 % | 100 % |
 | Artworkfel hittade (utom färg) | 40/40 | 112/112 | 16/16 | 96/96 | ≥ 99 % |
-| Färgfel hittade (ΔE-tröskel 8) | – | – | 2/8 | – | – |
+| Färgfel hittade (ΔE-tröskel 8) | – | – | 0/8 | – | – |
 | Tryckfel hittade | 9/9 | 18/19 | 13/13 | 10/10 | ≥ 95 % |
 | Rätt klass | 40/40 | 104/112 | 16/18 | 96/96 | ≥ 95 % |
 | Rätt systematisk/lokal | 100 % | 100 % | 94 % | 100 % | ≥ 98 % |
@@ -143,7 +143,7 @@ rubrik, punktskrift, streckkod/QR) och riktade mutationer.
 - Falsklarmen är nära målet på lätta, normala och riktade ark (0–0,03 per etikett).
   På svåra ark ligger de på 0,66 per etikett. Nästan allt kommer från färgkalibreringen
   (unika, mättade kryddfärger; ett ark står för 16 av 21).
-- Färgfel upptäcks inte i okalibrerat läge (2/8): självkalibreringen och ΔE 8 äter upp
+- Färgfel upptäcks inte i okalibrerat läge (0/8): självkalibreringen och ΔE 8 äter upp
   förskjutningar på 5–8 ΔE. Kalibrerad scanner (IT8) krävs för färgkontroll.
 - Liten text (≤ 2,6 mm ordhöjd) har en känsligare tröskel. Annars missas ändringar som
   bara lägger till ett kort streck (6 → 8). Rubriker har den inte: rasterkanter mot färgad
@@ -151,6 +151,116 @@ rubrik, punktskrift, streckkod/QR) och riktade mutationer.
 - En flytt på ≈ 2 mm klassades i ett ark som "Form" i stället för "Flyttat". Felet
   hittades ändå.
 - Siffrorna gäller simulerat tryck. Verkliga tryck och fysiskt vikta ark är nästa test.
+
+## Simulator v2: flatbäddsscanner (CIS och CCD)
+
+`tools/testgen/scanner.py`, välj med `make_cases --scanner cis|ccd` (`legacy` = v1).
+
+| Effekt | CIS (t.ex. Canon LiDE) | CCD (t.ex. Epson Perfection) |
+|---|---|---|
+| Oskärpa när papperet lyfter | 3–5 px per mm lyft (kort skärpedjup) | 0,3–0,7 px per mm |
+| Ljusfall med höjd | snabbt (h0 1,2–1,8 mm) | långsamt (h0 6–10 mm) |
+| Perspektiv tvärs vagnen | nej | ja: lyft innehåll förskjuts h·x/L (L 250–400 mm) |
+| Kanalförskjutning R/G/B | ±0,25–0,4 px (dioderna blinkar i tur och ordning) | ±0,15 px (trilinjär sensor) |
+| Präglingssignal | svagare | starkare (lägre ljusvinkel) |
+
+Gemensamt: stegmotorns ojämnhet och skalfel i matningsriktningen, vinjettering,
+signalberoende brus, färgprofil och tonkurva, damm på glaset (facit: `scan_artifacts`,
+räknas varken som miss eller falsklarm).
+
+Veck är en höjdkarta: bergveck (`h = lyft · e^(−|s|/w)`) eller dalveck (vecket mot glaset,
+vingarna lyfter). Höjden ger oskärpa, ljusfall, sluttningsskuggning, förkortning och (CCD)
+perspektiv. Bergveck kan spräcka färgen på heltäckande ytor. Stresstest: `--fold-p 1
+--fold-lift 1.0`.
+
+Ändringar i analysen som simulatorn ledde till:
+
+- **Veckkandidater som återkommer** på samma etikettposition i många etiketter, utan att
+  ligga på en linje över arket, är ändringar i originalet och inte veck.
+- **Varje veckhypotes prövas mot alla etiketter** den korsar och behålls bara om den syns i
+  de flesta.
+- **Veck över tonplattor** godtas, inte bara över vitt papper.
+- **Veckzonens bredd mäts** tvärs linjen (oskärpa och ljusfall), i stället för en fast bredd.
+- **Stanslinjen eroderas även där den sammanfaller med sidkanten.**
+- **Liten text** (≤ 2,6 mm) har en känsligare tröskel. En ändring som bara lägger till ett
+  kort streck inne i ett ord (6 → 8, g → q) klassas som "Ändrat".
+
+## Säkerhetsgrad: säkrast först
+
+Varje skillnad får `certainty` = nivå, poäng och skäl (`printcmp/certainty.py`), och
+rapporten grupperar efter nivå:
+
+| Nivå | Belägg |
+|---|---|
+| Bekräftad (95–99) | Avkodat innehåll skiljer (streckkod), samma tydliga avvikelse på samma ställe i ≥ 75 % av etiketterna, eller PDF mot PDF |
+| Mycket sannolik (80–90) | Tydlig signal (≥ 2,5 × tröskeln), utanför veck; punktskrift med god marginal |
+| Trolig (60–75) | Över tröskeln men nära, eller nära ett veck |
+| Möjlig (20–35) | Osäker zon (veck, registrering), svag signal, färg med okalibrerad scanner |
+
+Ingen nivå är en garanti på 100 %. Poängen är än så länge en rangordning och inte en
+kalibrerad sannolikhet; kalibrering mot simulatorns facit är ett naturligt nästa steg.
+
+## PDF mot PDF: lagerval och textjämförelse
+
+```json
+{
+  "schema": "printcmp.jobspec/1",
+  "reference": {"path": "original.pdf"},
+  "sample": {"path": "revision.pdf"},
+  "layers": {"exclude": ["Ingredients EN"], "exclude_spots": ["White"]},
+  "text_compare": true
+}
+```
+
+- **Lager** (`printcmp/layers.py`): PDF-lager (Optional Content, även OCMD och Form-XObject
+  med `/OC`) och dekorfärger listas för båda filerna. `include` och `exclude` tar namn
+  eller mönster. Uteslutna lager tas bort ur innehållsströmmen före rendering *och*
+  textutvinning. Rapporten visar vilka lager som jämförts.
+- **Text** (`printcmp/textdiff.py`): orden tas ur båda textlagren med position, typsnitt
+  och storlek, i läsordning, och jämförs som sekvens. Resultatet är ändrat ord (med
+  teckenvis skillnad, `1,[5→8]`), tillagt, borttaget, flyttat, eller samma ord med annan
+  storlek eller annat typsnitt.
+  - En grafisk skillnad som överlappar en textskillnad får texten i rapporten.
+  - En textskillnad som inte syns grafiskt rapporteras som "Endast i textlagret", t.ex.
+    vit text eller fel i ToUnicode-tabellen.
+
+## Resultat v2: simulerad flatbäddsscanner
+
+Utvecklingen gjordes mot CIS-fall. CCD-fallen genererades samtidigt men kördes först när
+koden var fryst (undanhållna, ingen justering efteråt). 600 dpi, 8 etiketter per ark.
+
+| | CIS normal | CIS svår | CIS riktade | CCD normal | CCD svår | CCD riktade |
+|---|---|---|---|---|---|---|
+| Ark / etiketter | 6 / 48 | 4 / 32 | 2 / 16 | 6 / 48 | 4 / 32 | 2 / 16 |
+| Originalfel hittade (utom färg) | 80/80 | 72/72 | 48/48 | 56/56 | 48/48 | 48/48 |
+| Färgfel hittade | – | 0/16 | – | – | 0/16 | – |
+| Tryckfel hittade | 10/11 | 7/9 | 3/3 | 10/10 | 7/7 | 5/5 |
+| Falsklarm per etikett | 0,00 | 0,81 | 0,00 | 0,33 | 1,59 | 0,00 |
+
+Falsklarmen har två huvudorsaker:
+
+- **Trycksimulatorn**, inte analysen: på kryddmallen trycks en liten mättad grön form
+  mycket mörkare än originalet. Det ger samma systematiska avvikelse på alla etiketter
+  (16 av CIS svårs 26, alla 16 i CCD normal).
+- **Ett CCD-ark med ett dalveck som lyfter 1 mm** (51 av CCD svårs 51). Perspektivet
+  flyttar lyft innehåll i sidled och veckzonen blev för smal.
+
+**Stresstest: vecklyft** (2 ark per nivå och scanner, ett veck över arket)
+
+| Lyft | CIS: osäker zon | CIS: falsklarm/etikett | CCD: osäker zon | CCD: falsklarm/etikett |
+|---|---|---|---|---|
+| 0,2 mm | 3 mm | 0,00 | 3 mm | 0,00 |
+| 0,5 mm | 8 mm | 0,13 | 6 mm | 0,00 |
+| 1,0 mm | 25 mm | 0,19 | 4 mm | 0,38 |
+| 1,5 mm | 25 mm | 0,00 | 23 mm | 0,00 |
+
+Alla originalfel hittades på alla nivåer.
+
+- **CIS:** ett veck som lyfter ≥ 1 mm gör ungefär halva etiketthöjden obedömbar.
+- **CCD:** klarar ~1 mm med en smal zon. Vid 1,5 mm är båda lika dåliga.
+- **Rekommendation:** CCD-scanner när arken kan vara vikta; med CIS, pressa arket plant
+  (lock och tyngd) så att lyftet blir under ~0,5 mm.
+- Underlaget är litet (2 ark per nivå) och ska ses som en riktning, inte som exakta gränser.
 
 ## Avvikelser från planen i den här miljön
 
@@ -199,4 +309,12 @@ PyPI var inte nåbart, så följande ersättningar gjordes. Gränssnitten är f�
 - Konturerad text känns igen geometriskt; en rad med ≥ 3 likstora ikoner på samma baslinje
   kan tolkas som text.
 - Simulatorn är en förenkling; verkliga tryck (flexo/offset) och fysiska veck behövs för
-  att mäta falsklarm på riktigt.
+  att mäta falsklarm på riktigt. Kända brister i v2:
+  - Trycksimuleringen gör små mättade objekt för mörka.
+  - Präglingen är perfekta kupoler.
+  - Papper saknar fiberstruktur och genomlysning.
+  - Ett veck är alltid en rak linje över hela arket.
+- Veck som lyfter mer än ~1 mm på CCD kan ge falsklarm intill veckzonen (perspektivförskjutning).
+- Textjämförelsen kräver ett textlager. Konturerad text och text i bilder jämförs bara grafiskt.
+  Läsordningen är heuristisk (rader och kolumner); kraftigt omflyttad layout ger fler
+  textskillnader än nödvändigt.

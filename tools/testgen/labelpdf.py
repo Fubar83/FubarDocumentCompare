@@ -218,8 +218,53 @@ def render_pdf(spec: dict) -> bytes:
     def Y(y_mm):
         return (H - y_mm) * mm
 
+    layer_names: list[str] = []
     for el in spec["elements"]:
         t = el["type"]
+        lay = el.get("layer")
+        if lay:
+            if lay not in layer_names:
+                layer_names.append(lay)
+            c.saveState()
+            c._code.append(f"/OC /L{layer_names.index(lay)} BDC")
+        _draw_element(c, el, t, Y)
+        if lay:
+            c._code.append("EMC")
+            c.restoreState()
+
+    dl = spec.get("dieline")
+    if dl:
+        c.setStrokeColor(CMYKColorSep(0, 1, 0, 0, spotName="CutContour", density=1))
+        c.setLineWidth(0.25)
+        r = dl.get("radius_mm", 0)
+        c.roundRect(0, 0, W * mm, H * mm, r * mm, stroke=1, fill=0)
+    c.showPage()
+    c.save()
+    pdf = buf.getvalue()
+    return _add_ocgs(pdf, layer_names) if layer_names else pdf
+
+
+def _add_ocgs(pdf_bytes: bytes, names: list[str]) -> bytes:
+    """Gör /OC /Ln-markeringarna till riktiga PDF-lager (Optional Content Groups)."""
+    import pikepdf
+    pdf = pikepdf.open(io.BytesIO(pdf_bytes))
+    ocgs = [pdf.make_indirect(pikepdf.Dictionary(Type=pikepdf.Name.OCG, Name=pikepdf.String(n))) for n in names]
+    page = pdf.pages[0]
+    res = page.Resources
+    props = res.get("/Properties") or pikepdf.Dictionary()
+    for i, g in enumerate(ocgs):
+        props[f"/L{i}"] = g
+    res.Properties = props
+    pdf.Root.OCProperties = pikepdf.Dictionary(
+        OCGs=pikepdf.Array(ocgs),
+        D=pikepdf.Dictionary(Order=pikepdf.Array(ocgs), ON=pikepdf.Array(ocgs), OFF=pikepdf.Array()))
+    out = io.BytesIO()
+    pdf.save(out)
+    return out.getvalue()
+
+
+def _draw_element(c, el, t, Y):
+    if True:
         if t in ("text", "variable"):
             ensure_font(el["font"])
             c.setFillColor(_color(el.get("color")))
@@ -282,13 +327,3 @@ def render_pdf(spec: dict) -> bytes:
             renderPDF.draw(d, c, x * mm, Y(y + h))
         else:
             raise ValueError(f"okänd elementtyp {t}")
-
-    dl = spec.get("dieline")
-    if dl:
-        c.setStrokeColor(CMYKColorSep(0, 1, 0, 0, spotName="CutContour", density=1))
-        c.setLineWidth(0.25)
-        r = dl.get("radius_mm", 0)
-        c.roundRect(0, 0, W * mm, H * mm, r * mm, stroke=1, fill=0)
-    c.showPage()
-    c.save()
-    return buf.getvalue()

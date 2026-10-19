@@ -77,7 +77,7 @@ def detect(ref_L: np.ndarray, smp_L: np.ndarray, valid: np.ndarray, ppm: float, 
         xs, ys = xs[vv], ys[vv]
         # tillåt ±1 px avvikelse från linjen
         m_line = np.maximum.reduce([np.maximum(mag[np.clip(ys + o, 0, H_ - 1), xs], mag[ys, np.clip(xs + o, 0, W_ - 1)]) for o in (-2, -1, 0, 1, 2)])
-        bright = (r[ys, xs] > 85) & ~edges_ref[ys, xs]
+        bright = (r[ys, xs] > 25) & ~edges_ref[ys, xs]   # papper eller jämn tonplatta
         if bright.mean() < 0.25:
             continue                                  # längs tryckt yta: troligen ett riktigt fel
         if (m_line[bright] > t_line).mean() < 0.6:
@@ -189,3 +189,98 @@ def refine_near(ref_L: np.ndarray, smp_L: np.ndarray, valid: np.ndarray, ppm: fl
         a0 = mu
     L = 2 * (w + h) / ds
     return Fold(tuple((a0 - d * L) * ds), tuple((a0 + d * L) * ds), prior.band_px)
+
+
+def residual_map(ref_L: np.ndarray, smp_L: np.ndarray, valid: np.ndarray, ppm: float) -> dict:
+    """Nedsamplad residual för att pröva veckhypoteser (samma behandling som detect)."""
+    h, w = ref_L.shape
+    ds = max(1, int(round(ppm / 6)))
+    r = cv2.resize(ref_L, (w // ds, h // ds), interpolation=cv2.INTER_AREA)
+    s = cv2.resize(smp_L, (w // ds, h // ds), interpolation=cv2.INTER_AREA)
+    v = cv2.resize(valid.astype(np.uint8), (w // ds, h // ds), interpolation=cv2.INTER_NEAREST).astype(bool)
+    res = cv2.GaussianBlur(s - r, (0, 0), 1.0)
+    res = res - cv2.GaussianBlur(res, (0, 0), 12)
+    mag = np.abs(res)
+    edges_ref = cv2.dilate((cv2.Canny(np.clip(r * 2.55, 0, 255).astype(np.uint8), 30, 90) > 0).astype(np.uint8),
+                           np.ones((3, 3), np.uint8)) > 0
+    flat = v & ~edges_ref & (r > 25)
+    sigma = 1.4826 * float(np.median(mag[v & ~edges_ref])) if (v & ~edges_ref).any() else 1.0
+    return {"mag": mag, "flat": flat, "t": max(2.0, 3.0 * sigma), "ds": ds}
+
+
+def support(rm: dict, f: Fold) -> tuple[float, int]:
+    """Andel av linjens punkter på ljust, kantfritt papper där residualen syns (±2 px)."""
+    mag, flat, ds = rm["mag"], rm["flat"], rm["ds"]
+    H_, W_ = mag.shape
+    a = np.array(f.p0, float) / ds
+    b = np.array(f.p1, float) / ds
+    d = b - a
+    n = np.linalg.norm(d)
+    if n < 1:
+        return 0.0, 0
+    d /= n
+    # punkt på linjen närmast bildens mitt, sedan ±diagonalen
+    c = np.array([W_ / 2, H_ / 2])
+    foot = a + np.dot(c - a, d) * d
+    L = int(np.hypot(W_, H_))
+    ts = np.arange(-L, L)
+    xs = np.round(foot[0] + ts * d[0]).astype(int)
+    ys = np.round(foot[1] + ts * d[1]).astype(int)
+    ok = (xs >= 0) & (xs < W_) & (ys >= 0) & (ys < H_)
+    xs, ys = xs[ok], ys[ok]
+    sel = flat[ys, xs]
+    xs, ys = xs[sel], ys[sel]
+    if len(xs) == 0:
+        return 0.0, 0
+    m = np.maximum.reduce([np.maximum(mag[np.clip(ys + o, 0, H_ - 1), xs], mag[ys, np.clip(xs + o, 0, W_ - 1)])
+                           for o in (-2, -1, 0, 1, 2)])
+    return float((m > rm["t"]).mean()), int(len(xs))
+
+
+def estimate_halfwidth(d_struct: np.ndarray, dL: np.ndarray, valid: np.ndarray, ppm: float, f: Fold,
+                       struct_thr: float, max_mm: float = 12.0) -> float:
+    """Hur långt från vecklinjen bilden påverkas (px).
+
+    Ett lyft veck gör bilden oskarp och mörkare i ett band vars bredd beror på hur högt
+    papperet lyfter och på scannerns skärpedjup. Profilen tvärs linjen mäts i steg om
+    0,5 mm: bandet sträcker sig så länge kanter avviker (oskärpa) eller ytan är mörkare
+    än normalt, räknat sammanhängande från linjen och åt båda håll.
+    """
+    h, w = d_struct.shape
+    ds = max(1, int(round(ppm / 12)))
+    D = d_struct[::ds, ::ds]
+    A = np.abs(cv2.GaussianBlur(dL, (0, 0), 2)[::ds, ::ds])
+    V = valid[::ds, ::ds]
+    yy, xx = np.mgrid[0:D.shape[0], 0:D.shape[1]].astype(np.float32)
+    (x0, y0), (x1, y1) = f.p0, f.p1
+    dx, dy = x1 - x0, y1 - y0
+    n = np.hypot(dx, dy) or 1.0
+    nx, ny = -dy / n, dx / n
+    s = ((xx * ds - x0) * nx + (yy * ds - y0) * ny) / ppm       # mm, med tecken
+    step = 0.5
+    base = []
+    far = V & (np.abs(s) > max_mm + 2)
+    noise_A = float(np.percentile(A[far], 75)) if far.sum() > 200 else 2.0
+    best = 0.0
+    for sign in (-1, 1):
+        reach, gap = 0.0, 0
+        for k in range(int(max_mm / step)):
+            sel = V & (sign * s >= k * step) & (sign * s < (k + 1) * step)
+            if sel.sum() < 30:
+                gap += 1
+                if gap > 4:
+                    break
+                continue
+            hot = (np.percentile(D[sel], 97) > struct_thr) or (np.median(A[sel]) > max(3.0, 2 * noise_A))
+            if hot:
+                reach, gap = (k + 1) * step, 0
+            else:
+                gap += 1
+                # 1,5 mm utan påverkan: bandet är slut. Vid ett dalveck ligger själva vecket
+                # mot glaset och påverkas lite; vingarna lyfter längre ut, så tillåt ett
+                # längre glapp innan första påverkan.
+                if gap > (2 if reach > 0 else 8):
+                    break
+        best = max(best, reach)
+        base.append(reach)
+    return best * ppm
