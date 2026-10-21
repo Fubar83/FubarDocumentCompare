@@ -9,6 +9,7 @@ core/              C++20-kärnan: lagrade bibliotek, C-API (FubarDocumentCompare
 bindings/dotnet/   .NET-biblioteket FubarDocumentCompare med xUnit-tester; FubarDocumentCompare.slnx bygger allt i .NET
 web/server/        webbtjänst FubarDocumentCompare.Web (ASP.NET minimal API, S3/filsystem, Server-Sent Events)
 web/tests/         webbtjänstens integrationstester (WebApplicationFactory)
+examples/dotnet/   körbara C#-exempel på vanliga uppgifter (examples/dotnet/README.md)
 web/client/        webbgränssnitt i TypeScript, byggs till web/server/wwwroot/js
 testdata/          små genererade fall med facit, för testerna
 docs/              algoritmer, testmaterial och mätningar (docs/algoritmer.md)
@@ -142,9 +143,13 @@ using var job = engine.Comparer.StartCompare(reference, Sample.ScanFile("ark.tif
 await foreach (var e in job.Events.ReadAllAsync())          // eller job.EventReceived, eller IProgress<JobEvent>
     if (e.Type == EventType.LabelLocated) Console.WriteLine($"etikett {e.Index}");
 using var result = await job.Completion;
+byte[] json = engine.ResultExporter.ToJson(result);                 // även ToReportHtml, CropPng(result, i, Side.Sample)
 ```
 
-Namnrymder: `FubarDocumentCompare` (motor, fel, inställningar), `.Pdf`, `.Imaging` och
+Fler körbara exempel finns i `examples/dotnet` (rendering, varianter, rutor, överlägg, typsnitt, lager,
+jämförelser och kö).
+
+Namnrymder: `FubarDocumentCompare` (motor, fel, inställningar), `.Pdf`, `.Imaging`, `.Fonts` och
 `.Comparison`.
 
 Den inbyggda DLL:en heter `FubarDocumentCompare.Native.dll` och .NET-sammansättningen

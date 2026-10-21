@@ -26,8 +26,9 @@ public sealed class EngineFixture : IDisposable
 public class ComparerTests : IClassFixture<EngineFixture>
 {
     private readonly Comparer _engine;
+    private readonly IResultExporter _export;
 
-    public ComparerTests(EngineFixture f) => _engine = f.Engine.Comparer;
+    public ComparerTests(EngineFixture f) => (_engine, _export) = (f.Engine.Comparer, f.Engine.ResultExporter);
 
     [Fact]
     public void Version_is_reported()
@@ -76,10 +77,7 @@ public class ComparerTests : IClassFixture<EngineFixture>
         Assert.Contains(events, e => e.Type == EventType.Progress);
         Assert.Equal(EventType.Completed, events[^1].Type);
 
-        var crop = result.RenderCrop(0, Side.Sample, maxWidth: 300);
-        Assert.InRange(crop.Width, 1, 300);
-        Assert.Equal(crop.Width * crop.Height * 3, crop.Pixels.Length);
-        var png = crop.ToPng();
+        var png = _export.CropPng(result, 0, Side.Sample, maxWidth: 300)!;
         Assert.Equal(new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G' }, png[..4]);
     }
 
@@ -140,7 +138,8 @@ public class ComparerTests : IClassFixture<EngineFixture>
         try
         {
             var json = Path.Combine(dir.FullName, "result.json");
-            result.WriteJson(json);
+            File.WriteAllBytes(json, _export.ToJson(result));
+            Assert.StartsWith("<!", System.Text.Encoding.UTF8.GetString(_export.ToReportHtml(result)));
             using var doc = JsonDocument.Parse(File.ReadAllText(json));
             Assert.True(doc.RootElement.TryGetProperty("items", out _) || doc.RootElement.TryGetProperty("data_check", out _));
         }

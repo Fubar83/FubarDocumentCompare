@@ -43,6 +43,7 @@ typedef struct fdc_reference fdc_reference;
 typedef struct fdc_job fdc_job;
 typedef struct fdc_result fdc_result;
 typedef struct fdc_fontset fdc_fontset;
+typedef struct fdc_buffer fdc_buffer;   /* bytes som biblioteket lämnar ut (JSON, bilder) */
 
 typedef enum fdc_status {
     FDC_OK = 0,
@@ -304,7 +305,12 @@ FDC_API fdc_status fdc_result_data_item(const fdc_result* r, int i, fdc_data_ite
 /* Utsnitt kring ett fynd som RGB (8 bit). Anropa med buffer = NULL för att få storleken. */
 FDC_API fdc_status fdc_result_render_crop(const fdc_result* r, int finding_index, fdc_side side, int max_width,
                                        unsigned char* buffer, size_t buffer_len, int* width, int* height);
-/* Export – hjälpfunktioner, inte gränssnittet. */
+/* Export i minnet (för tjänster som sparar i ett objektlager): result.json, HTML-rapporten och
+ * utsnitt som PNG. Bufferten ägs av anroparen (fdc_buffer_free). */
+FDC_API fdc_status fdc_result_json(const fdc_result* r, fdc_buffer** out);
+FDC_API fdc_status fdc_result_report_html(const fdc_result* r, fdc_buffer** out);
+FDC_API fdc_status fdc_result_crop_png(const fdc_result* r, int finding_index, fdc_side side, int max_width, fdc_buffer** out);
+/* Export till filer. */
 FDC_API fdc_status fdc_result_write_report(const fdc_result* r, const char* html_path);
 FDC_API fdc_status fdc_result_write_json(const fdc_result* r, const char* json_path);
 FDC_API fdc_status fdc_result_write_layers(const fdc_result* r, const char* dir, double dpi);
@@ -313,7 +319,6 @@ FDC_API void fdc_result_free(fdc_result* r);
 /* ------------------------------------------------------------------ buffertar */
 
 /* Bytes som biblioteket lämnar ut (JSON, kodade bilder). Ägs av anroparen. */
-typedef struct fdc_buffer fdc_buffer;
 FDC_API const void* fdc_buffer_data(const fdc_buffer* b);
 FDC_API size_t fdc_buffer_size(const fdc_buffer* b);
 FDC_API void fdc_buffer_free(fdc_buffer* b);

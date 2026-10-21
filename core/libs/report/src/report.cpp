@@ -139,7 +139,10 @@ std::string contents(const json& result) {
 
 }  // namespace
 
-void write_json(const std::string& path, const json& result) { write_file(path, result.dump(2, ' ', false, json::error_handler_t::replace)); }
+std::string json_text(const json& result) { return result.dump(2, ' ', false, json::error_handler_t::replace); }
+void write_json(const std::string& path, const json& result) { write_file(path, json_text(result)); }
+void write_label_html(const std::string& path, const compare::LabelResult& r) { write_file(path, label_html(r)); }
+void write_document_html(const std::string& path, const json& result) { write_file(path, document_html(result)); }
 
 void write_layers(const std::string& dir, const compare::LabelResult& r, double layer_dpi) {
     std::filesystem::create_directories(std::filesystem::u8path(dir));
@@ -211,7 +214,7 @@ std::string data_check_html(const json& dc, const std::string& title) {
            "</tbody></table>";
 }
 
-void write_label_html(const std::string& path, const compare::LabelResult& r) {
+std::string label_html(const compare::LabelResult& r) {
     const json& result = r.result;
     // arköversikt
     double s = std::min(1.0, 900.0 / r.sample_rgb.cols);
@@ -413,7 +416,7 @@ void write_label_html(const std::string& path, const compare::LabelResult& r) {
         levels_nav + "</div>\n" + (sections.empty() ? std::string("<p>Inga skillnader hittades.</p>") : sections) +
         "\n<h2>Instanser</h2><div class=gallery>" + gallery + "</div>\n" + data_check_html(result.value("data_check", json())) +
         "\n<p class=muted>Tider (ms): " + timing + "</p>\n</main></body></html>";
-    write_file(path, doc);
+    return doc;
 }
 
 }  // namespace pc::report

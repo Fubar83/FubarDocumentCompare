@@ -157,9 +157,9 @@ internal static unsafe class Native
     [DllImport(Lib)] internal static extern Status fdc_result_label(IntPtr r, int i, fdc_label_info* out_);
     [DllImport(Lib)] internal static extern int fdc_result_data_item_count(IntPtr r);
     [DllImport(Lib)] internal static extern Status fdc_result_data_item(IntPtr r, int i, fdc_data_item* out_);
-    [DllImport(Lib)] internal static extern Status fdc_result_render_crop(IntPtr r, int finding, int side, int max_width, byte* buffer, nuint buffer_len, out int width, out int height);
-    [DllImport(Lib)] internal static extern Status fdc_result_write_report(IntPtr r, byte* path);
-    [DllImport(Lib)] internal static extern Status fdc_result_write_json(IntPtr r, byte* path);
+    [DllImport(Lib)] internal static extern Status fdc_result_json(IntPtr r, out IntPtr buffer);
+    [DllImport(Lib)] internal static extern Status fdc_result_report_html(IntPtr r, out IntPtr buffer);
+    [DllImport(Lib)] internal static extern Status fdc_result_crop_png(IntPtr r, int finding, int side, int max_width, out IntPtr buffer);
     [DllImport(Lib)] internal static extern Status fdc_result_write_layers(IntPtr r, byte* path, double dpi);
     [DllImport(Lib)] internal static extern void fdc_result_free(IntPtr r);
 

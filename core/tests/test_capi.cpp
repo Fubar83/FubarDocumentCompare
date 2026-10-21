@@ -277,3 +277,35 @@ TEST(capi_fontsets_are_immutable_values) {
     fdc_fontset_free(sys);
     fdc_fontset_free(empty);
 }
+
+TEST(capi_result_exports_in_memory) {
+    Engine en;
+    auto* r = open_ref(en.e, data("label/ref.pdf"));
+    CHECK(r != nullptr);
+    if (!r) return;
+    fdc_source s;
+    fdc_source_init(&s);
+    s.kind = FDC_SOURCE_PDF_FILE;
+    auto smp = data("label/smp.pdf");
+    s.path = smp.c_str();
+    fdc_result* res = nullptr;
+    CHECK_EQ(fdc_compare(en.e, r, &s, nullptr, &res), FDC_OK);
+    if (!res) return;
+    fdc_buffer* j = nullptr;
+    CHECK_EQ(fdc_result_json(res, &j), FDC_OK);
+    auto parsed = nlohmann::json::parse(std::string((const char*)fdc_buffer_data(j), fdc_buffer_size(j)));
+    fdc_buffer_free(j);
+    CHECK(parsed.contains("differences"));
+    fdc_buffer* html = nullptr;
+    CHECK_EQ(fdc_result_report_html(res, &html), FDC_OK);
+    CHECK(std::string((const char*)fdc_buffer_data(html), std::min<size_t>(fdc_buffer_size(html), 64)).find("<!") != std::string::npos);
+    fdc_buffer_free(html);
+    CHECK(fdc_result_finding_count(res) > 0);
+    fdc_buffer* png = nullptr;
+    CHECK_EQ(fdc_result_crop_png(res, 0, FDC_SIDE_SAMPLE, 300, &png), FDC_OK);
+    CHECK(png && fdc_buffer_size(png) > 8 && std::memcmp(fdc_buffer_data(png), "\x89PNG", 4) == 0);
+    fdc_buffer_free(png);
+    CHECK_EQ(fdc_result_crop_png(res, 100000, FDC_SIDE_SAMPLE, 300, &png), FDC_ERR_INVALID_ARGUMENT);
+    fdc_result_free(res);
+    fdc_reference_free(r);
+}

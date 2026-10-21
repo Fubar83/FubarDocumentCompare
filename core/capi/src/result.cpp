@@ -282,6 +282,43 @@ FDC_API fdc_status fdc_result_write_layers(const fdc_result* r, const char* dir,
     });
 }
 
+FDC_API fdc_status fdc_result_json(const fdc_result* r, fdc_buffer** out) {
+    return guard([&] {
+        if (!r || !out) return set_error(FDC_ERR_INVALID_ARGUMENT, "resultat eller out saknas");
+        auto s = report::json_text(r->j);
+        *out = new fdc_buffer{std::vector<unsigned char>(s.begin(), s.end())};
+        return FDC_OK;
+    });
+}
+
+FDC_API fdc_status fdc_result_report_html(const fdc_result* r, fdc_buffer** out) {
+    return guard([&] {
+        if (!r || !out) return set_error(FDC_ERR_INVALID_ARGUMENT, "resultat eller out saknas");
+        std::string html;
+        if (r->kind == FDC_RESULT_LABEL) html = report::label_html(r->label);
+        else if (r->kind == FDC_RESULT_DOCUMENT) html = report::document_html(r->j);
+        else
+            html = "<!doctype html><html lang=sv><head><meta charset=utf-8><title>Datakontroll</title></head><body>" +
+                   report::data_check_html(r->j) + "</body></html>";
+        *out = new fdc_buffer{std::vector<unsigned char>(html.begin(), html.end())};
+        return FDC_OK;
+    });
+}
+
+FDC_API fdc_status fdc_result_crop_png(const fdc_result* r, int finding_index, fdc_side side, int max_width, fdc_buffer** out) {
+    if (!out) return set_error(FDC_ERR_INVALID_ARGUMENT, "out saknas");
+    int w = 0, h = 0;
+    auto s = fdc_result_render_crop(r, finding_index, side, max_width, nullptr, 0, &w, &h);
+    if (s != FDC_OK) return s;
+    cv::Mat rgb(h, w, CV_8UC3);
+    s = fdc_result_render_crop(r, finding_index, side, max_width, rgb.data, rgb.total() * 3, &w, &h);
+    if (s != FDC_OK) return s;
+    return guard([&] {
+        *out = new fdc_buffer{image::encode(rgb, image::Format::Png)};
+        return FDC_OK;
+    });
+}
+
 FDC_API void fdc_result_free(fdc_result* r) { delete r; }
 
 

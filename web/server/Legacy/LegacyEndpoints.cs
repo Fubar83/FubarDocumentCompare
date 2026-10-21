@@ -25,6 +25,7 @@ public static class LegacyEndpoints
     {
         var store = app.Services.GetRequiredService<Store>();
         var engine = app.Services.GetRequiredService<DocumentCompareEngine>().Comparer;
+        var exporter = app.Services.GetRequiredService<DocumentCompareEngine>().ResultExporter;
         var sweeper = new Timer(_ => store.Sweep(), null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
         app.Lifetime.ApplicationStopping.Register(() => { sweeper.Dispose(); store.Dispose(); });
 
@@ -190,7 +191,8 @@ public static class LegacyEndpoints
             if (!Enum.TryParse<Side>(side, true, out var s)) return Results.BadRequest();
             try
             {
-                return Results.File(r.RenderCrop(index, s, Math.Clamp(maxWidth ?? 480, 64, 2000)).ToPng(), "image/png");
+                var png = exporter.CropPng(r, index, s, Math.Clamp(maxWidth ?? 480, 64, 2000));
+                return png is null ? Results.NotFound() : Results.File(png, "image/png");
             }
             catch (DocumentCompareException e)
             {
@@ -204,7 +206,7 @@ public static class LegacyEndpoints
             var path = Path.Combine(job.Dir, "report.html");
             lock (job)
             {
-                if (!File.Exists(path)) r.WriteReport(path);
+                if (!File.Exists(path)) File.WriteAllBytes(path, exporter.ToReportHtml(r));
             }
             return Results.File(path, "text/html; charset=utf-8");
         });

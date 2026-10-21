@@ -143,7 +143,7 @@ std::string where(const json& l) {
 
 }  // namespace
 
-void write_document_html(const std::string& path, const json& result) {
+std::string document_html(const json& result) {
     const json& st = result["stats"];
     const json& fs = result["findings"];
     std::map<std::string, int> counts;
@@ -203,7 +203,7 @@ void write_document_html(const std::string& path, const json& result) {
         "</tbody></table>\n<h2>Stilroller</h2><p class=muted>Hur referensens stilar är satta i provet (mest använda först).</p>\n"
         "<table><thead><tr><th>Referens</th><th>Prov</th><th>Ord</th><th>Andel</th></tr></thead><tbody>" + smap + "</tbody></table>\n" +
         data_check_html(result.value("data_check", json())) + "\n</main></body></html>";
-    write_file(path, doc);
+    return doc;
 }
 
 }  // namespace pc::report

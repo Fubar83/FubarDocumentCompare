@@ -90,21 +90,73 @@ public sealed class DocumentOptions
     public string? DataCheckPath { get; init; }
 }
 
-public sealed record Summary(
-    int Differences, int LabelsFound, int LabelsExpected, int LabelsPass, int LabelsWarn, int LabelsFail,
-    int DataFound, int DataNear, int DataMissing, int DataMismatch, double MatchRatio);
+// Resultatets data. Egenskaper med init (inte positionella poster): nya fält kan läggas till utan att
+// bryta anropare.
 
-public sealed record Finding(
-    int Index, int Id, FindingKind Kind, Severity Severity, Certainty Certainty, int Score, bool Systematic,
-    int Label, int LabelCount, int Page, double XMm, double YMm, double WMm, double HMm,
-    string Category, string? TextFrom, string? TextTo, string Detail, IReadOnlyList<string> Reasons, string Fingerprint);
+public sealed record Summary
+{
+    public int Differences { get; init; }
+    public int LabelsFound { get; init; }
+    public int LabelsExpected { get; init; }
+    public int LabelsPass { get; init; }
+    public int LabelsWarn { get; init; }
+    public int LabelsFail { get; init; }
+    public int DataFound { get; init; }
+    public int DataNear { get; init; }
+    public int DataMissing { get; init; }
+    public int DataMismatch { get; init; }
+    /// <summary>Dokumentläge: andel lika ord.</summary>
+    public double MatchRatio { get; init; }
+}
 
-public sealed record LabelInfo(
-    int Index, int Row, int Col, LabelStatus Status, double RotationDeg, IReadOnlyList<PointD> Corners,
-    int Folds, double RegistrationRmsPx);
+public sealed record Finding
+{
+    /// <summary>Plats i <see cref="Result.Findings"/> (för utsnitt).</summary>
+    public int Index { get; init; }
+    public int Id { get; init; }
+    public FindingKind Kind { get; init; }
+    public Severity Severity { get; init; }
+    public Certainty Certainty { get; init; }
+    public int Score { get; init; }
+    public bool Systematic { get; init; }
+    public int Label { get; init; }
+    public int LabelCount { get; init; }
+    public int Page { get; init; }
+    public double XMm { get; init; }
+    public double YMm { get; init; }
+    public double WMm { get; init; }
+    public double HMm { get; init; }
+    public string Category { get; init; } = "";
+    public string? TextFrom { get; init; }
+    public string? TextTo { get; init; }
+    public string Detail { get; init; } = "";
+    public IReadOnlyList<string> Reasons { get; init; } = [];
+    /// <summary>Stabilt id för "godkänn och ignorera" mellan versioner.</summary>
+    public string Fingerprint { get; init; } = "";
+}
 
-public sealed record DataItem(
-    string Field, string Expected, DataStatus Status, string? FoundText, string? Diff, int Count, int Page);
+public sealed record LabelInfo
+{
+    public int Index { get; init; }
+    public int Row { get; init; }
+    public int Col { get; init; }
+    public LabelStatus Status { get; init; }
+    public double RotationDeg { get; init; }
+    public IReadOnlyList<PointD> Corners { get; init; } = [];
+    public int Folds { get; init; }
+    public double RegistrationRmsPx { get; init; }
+}
+
+public sealed record DataItem
+{
+    public string Field { get; init; } = "";
+    public string Expected { get; init; } = "";
+    public DataStatus Status { get; init; }
+    public string? FoundText { get; init; }
+    public string? Diff { get; init; }
+    public int Count { get; init; }
+    public int Page { get; init; }
+}
 
 public sealed record LayerInfo(string Name, bool DefaultOn);
 

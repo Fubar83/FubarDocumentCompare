@@ -9,7 +9,7 @@ namespace FubarDocumentCompare.Comparison;
 /// using var result = await engine.Comparer.CompareAsync(reference, Sample.ScanFile("scan.tif"));
 /// </code>
 /// </summary>
-public sealed unsafe class Comparer
+public sealed unsafe partial class Comparer
 {
     private readonly DocumentCompareEngine _engine;
 
