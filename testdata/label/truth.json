@@ -1,0 +1,58 @@
+{
+  "schema": "printcmp.doctruth/1",
+  "generator": "doccases-cpp/1",
+  "seed": 7100,
+  "type": "label",
+  "template": "oat_drink",
+  "layout": "fixed",
+  "mutations": [
+    {
+      "id": "m1",
+      "mutation": "swap",
+      "element": "intl",
+      "kind": "Moved",
+      "ref_text": "Овсяный напиток · Ρόφημα βρώμης",
+      "other": "ingr1",
+      "other_text": "Ingredienser: vatten, havre 10 %,"
+    },
+    {
+      "id": "m2",
+      "mutation": "font",
+      "element": "title",
+      "kind": "Style",
+      "ref_text": "Ekologisk Havredryck",
+      "attr": "family"
+    },
+    {
+      "id": "m3",
+      "mutation": "word_add",
+      "element": "subtitle",
+      "kind": "Added",
+      "smp_text": "ny"
+    },
+    {
+      "id": "m4",
+      "mutation": "ean",
+      "element": "ean",
+      "kind": "Changed",
+      "ref_text": "001238",
+      "smp_text": "401236",
+      "category": "Number"
+    }
+  ],
+  "data_check": {
+    "file": "expected.txt",
+    "variant": 0,
+    "items": {
+      "Title": "found",
+      "Subtitle": "near",
+      "Ingr1": "near",
+      "Ingr2": "found",
+      "Store": "found",
+      "Intl": "found",
+      "Batch": "found",
+      "EAN": "mismatch",
+      "Allergener": "missing"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "printcmp-web-client",
+  "private": true,
+  "version": "0.2.0",
+  "description": "Webbgränssnitt för printcmp (byggs till web/server/wwwroot).",
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -p . --watch"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3"
+  }
+}

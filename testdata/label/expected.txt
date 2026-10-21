@@ -1,0 +1,10 @@
+# förväntade uppgifter (fält: värde)
+Title: Ekologisk Havredryck
+Subtitle: Naturell · 1 liter
+Ingr1: Ingrediensor: vatten
+Ingr2: rapsolja
+Store: Förvaras kylt efter öppning.
+Intl: Овсяный напиток · Ρόφημα βρώμης
+Batch: /LOT\ \d\d\d\d\-\d\d\d\d/
+EAN: 731086500123
+Allergener: Kan innehålla spår av nötter

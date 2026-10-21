@@ -1,5 +1,13 @@
-__pycache__/
-*.pyc
+# C++-kärnan
+core/build/
+# .NET och webb
+bin/
+obj/
+node_modules/
+web/server/wwwroot/js/
+# genererat testmaterial och mätresultat
+bench*/
+bench*.log
+doccases*/
+docmetrics*.json
 cases/
-out/
-*.tif

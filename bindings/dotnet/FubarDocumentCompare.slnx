@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="../../web/server/FubarDocumentCompare.Web.csproj" />
+  <Project Path="../../web/tests/FubarDocumentCompare.Web.Tests.csproj" />
+  <Project Path="FubarDocumentCompare.Tests/FubarDocumentCompare.Tests.csproj" />
+  <Project Path="FubarDocumentCompare/FubarDocumentCompare.csproj" />
+</Solution>

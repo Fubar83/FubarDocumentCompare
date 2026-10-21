@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- FubarDocumentCompare: .NET-gränssnittet till FubarDocumentCompare.Native.dll (C-API:t i core/capi/include/fdc/fdc.h).
+       Data och tjänster är åtskilda; tjänsterna är tillståndslösa. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <RootNamespace>FubarDocumentCompare</RootNamespace>
+    <AssemblyName>FubarDocumentCompare</AssemblyName>
+    <IsTrimmable>true</IsTrimmable>
+    <!-- Mappen med FubarDocumentCompare.Native.dll och dess beroenden (pdfium, opencv, qpdf …). -->
+    <FdcNativeDir Condition="'$(FdcNativeDir)' == ''">$(MSBuildThisFileDirectory)..\..\..\core\build\windows\bin\</FdcNativeDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(FdcNativeDir)*.dll" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+</Project>

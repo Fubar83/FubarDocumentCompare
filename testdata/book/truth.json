@@ -1,0 +1,80 @@
+{
+  "schema": "printcmp.doctruth/1",
+  "generator": "doccases-cpp/1",
+  "seed": 7000,
+  "type": "book",
+  "profile": "book",
+  "layout": "reflow",
+  "mutations": [
+    {
+      "id": "m1",
+      "mutation": "para_font",
+      "kind": "Style",
+      "ref_text": "Röst kall vatten grå från 9,2 kilometer redan gammal. \"Andra Sofia alltid hand stor bordet sommar för hade boken ville klar kväll efter väg.\" Trädgårdsgången vara förklaringen inte skog ni bok ny för.",
+      "smp_text": "Röst kall vatten grå från 9,2 kilometer redan gammal. \"Andra Sofia alltid hand stor bordet sommar för hade boken ville klar kväll efter väg.\" Trädgårdsgången vara förklaringen inte skog ni bok ny för.",
+      "attr": "family"
+    },
+    {
+      "id": "m2",
+      "mutation": "typo",
+      "kind": "Changed",
+      "ref_text": "vägen",
+      "smp_text": "vgäen"
+    },
+    {
+      "id": "m3",
+      "mutation": "word_delete",
+      "kind": "Missing",
+      "ref_text": "staden",
+      "smp_text": ""
+    },
+    {
+      "id": "m4",
+      "mutation": "italic_lost",
+      "kind": "Style",
+      "ref_text": "verkligen mörker,",
+      "smp_text": "verkligen mörker,",
+      "attr": "italic"
+    },
+    {
+      "id": "m5",
+      "mutation": "number",
+      "kind": "Changed",
+      "ref_text": "2002",
+      "smp_text": "2005",
+      "category": "Number"
+    },
+    {
+      "id": "m6",
+      "mutation": "para_move",
+      "kind": "Moved",
+      "ref_text": "Andra skogen tog tänkte trädgårdsgången ut sade alltid alla fotografierna klar Oskar morgon fika filten? Sig plötsligt vit återkomsten trädgårdsgången en de rum ibland år väg på fiskeläget fiolen ansikte. Rummet också mot officiellt berättelsen vinterkvällen skogen kommer med ny Ingrid skogen minne. Tillsammans fingrarna bokhandeln utan sommarnatten lång som under sommarnatten ljus röd nu svar fiskeläget hus. Blå inte trodde fick vind kanske trodde grå kunde. Rum till sade ångbåtsbryggan såg bordet låg fråga Oskar mot det som.",
+      "smp_text": "Andra skogen tog tänkte trädgårdsgången ut sade alltid alla fotografierna klar Oskar morgon fika filten? Sig plötsligt vit återkomsten trädgårdsgången en de rum ibland år väg på fiskeläget fiolen ansikte. Rummet också mot officiellt berättelsen vinterkvällen skogen kommer med ny Ingrid skogen minne. Tillsammans fingrarna bokhandeln utan sommarnatten lång som under sommarnatten ljus röd nu svar fiskeläget hus. Blå inte trodde fick vind kanske trodde grå kunde. Rum till sade ångbåtsbryggan såg bordet låg fråga Oskar mot det som."
+    },
+    {
+      "id": "m7",
+      "mutation": "punct",
+      "kind": "Changed",
+      "ref_text": "fika.",
+      "smp_text": "fika;",
+      "category": "Punctuation"
+    },
+    {
+      "id": "m8",
+      "mutation": "heading_size",
+      "kind": "Style",
+      "ref_text": "5. Såg långsamt",
+      "smp_text": "5. Såg långsamt",
+      "attr": "size"
+    },
+    {
+      "id": "m9",
+      "mutation": "color",
+      "kind": "Style",
+      "ref_text": "kunde",
+      "smp_text": "kunde",
+      "attr": "color"
+    }
+  ],
+  "words": 1924
+}

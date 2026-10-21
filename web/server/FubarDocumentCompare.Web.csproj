@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!-- FubarDocumentCompare.Web: REST runt biblioteket. Dokument (S3/filsystem), rendering, rutor, överlägg,
+       typsnitt per kund, sessioner; jobb med Server-Sent Events.
+       Gränssnittet (web/client, TypeScript) byggs till wwwroot/. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>FubarDocumentCompare.Web</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\bindings\dotnet\FubarDocumentCompare\FubarDocumentCompare.csproj" />
+  </ItemGroup>
+  <!-- Bygg TypeScript-gränssnittet (web/client) till wwwroot/js när källorna ändrats. -->
+  <PropertyGroup>
+    <ClientDir>$(MSBuildThisFileDirectory)..\client\</ClientDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <ClientSource Include="$(ClientDir)src\**\*.ts;$(ClientDir)tsconfig.json;$(ClientDir)package.json" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.S3" Version="4.0.104.5" />
+  </ItemGroup>
+  <Target Name="BuildClient" BeforeTargets="Build" Inputs="@(ClientSource)" Outputs="$(MSBuildThisFileDirectory)wwwroot\js\main.js" Condition="'$(SkipClientBuild)' != 'true'">
+    <Exec Command="npm install --no-audit --no-fund" WorkingDirectory="$(ClientDir)" Condition="!Exists('$(ClientDir)node_modules')" />
+    <Exec Command="npm run build" WorkingDirectory="$(ClientDir)" />
+  </Target>
+</Project>

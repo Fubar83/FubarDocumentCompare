@@ -1,0 +1,18 @@
+{
+  "name": "printcmp-core",
+  "version-string": "0.2.0",
+  "description": "printcmp native core: print-vs-PDF and PDF-vs-PDF comparison",
+  "dependencies": [
+    {
+      "name": "opencv4",
+      "default-features": false,
+      "features": ["tiff", "png", "jpeg", "calib3d"]
+    },
+    "tiff",
+    "nu-book-zxing-cpp",
+    "qpdf",
+    "utf8proc",
+    "pcre2",
+    "nlohmann-json"
+  ]
+}

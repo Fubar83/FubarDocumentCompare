@@ -1,0 +1,1 @@
+global using FubarDocumentCompare.Interop;

@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "outDir": "../server/wwwroot/js",
+    "rootDir": "src",
+    "sourceMap": true
+  },
+  "include": ["src"]
+}
