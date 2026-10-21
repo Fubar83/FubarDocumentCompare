@@ -50,6 +50,7 @@ struct LayerFacts {
     std::string name;
     bool default_on = true;
     bool used_on_page = false;
+    std::string step_group, step_type;    // ISO 19593-bearbetningssteg (t.ex. Structural/Cutting), tomma annars
 };
 struct SpotFacts {
     std::string name;

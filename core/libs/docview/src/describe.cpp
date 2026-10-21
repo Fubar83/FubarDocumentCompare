@@ -61,7 +61,7 @@ Metadata build(Cache& cache, const Pdf& pdf, const pdf::FontSet* fonts) {
         p.width_mm = (b.trim[2] - b.trim[0]) * PT_MM;
         p.height_mm = (b.trim[3] - b.trim[1]) * PT_MM;
         if (i < (int)layers.size()) {
-            for (auto& o : layers[i].ocgs) p.layers.push_back({o.name, o.default_on, o.used_on_page});
+            for (auto& o : layers[i].ocgs) p.layers.push_back({o.name, o.default_on, o.used_on_page, o.step_group, o.step_type});
             for (auto& s : layers[i].spots) p.spots.push_back({s, detail::spot_role(s)});
         }
         for (auto& f : pf.fonts) {

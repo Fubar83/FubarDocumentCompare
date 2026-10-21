@@ -23,7 +23,9 @@ json to_json(const Metadata& m) {
         if (p.bleed) boxes["bleed"] = rect(*p.bleed);
         if (p.art) boxes["art"] = rect(*p.art);
         json layers = json::array(), spots = json::array(), fonts = json::array();
-        for (auto& l : p.layers) layers.push_back({{"name", l.name}, {"defaultOn", l.default_on}, {"usedOnPage", l.used_on_page}});
+        for (auto& l : p.layers)
+            layers.push_back({{"name", l.name}, {"defaultOn", l.default_on}, {"usedOnPage", l.used_on_page},
+                              {"processingStep", l.step_group.empty() ? json(nullptr) : json{{"group", l.step_group}, {"type", l.step_type}}}});
         for (auto& s : p.spots) spots.push_back({{"name", s.name}, {"role", role(s.role)}});
         for (auto& f : p.fonts)
             fonts.push_back({{"name", f.name}, {"baseName", f.base_name}, {"family", f.family}, {"embedded", f.embedded},

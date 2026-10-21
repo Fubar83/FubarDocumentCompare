@@ -14,6 +14,9 @@ struct Ocg {
     std::string name;
     bool default_on = true;
     bool used_on_page = false;
+    // ISO 19593-1 bearbetningssteg (GTS_Metadata): t.ex. Structural/Cutting. Tomma om lagret är vanligt
+    // innehåll. Bearbetningsstegen trycks inte; de beskriver stansning, mått, positioner, punktskrift …
+    std::string step_group, step_type;
 };
 struct LayerInfo {
     std::vector<Ocg> ocgs;

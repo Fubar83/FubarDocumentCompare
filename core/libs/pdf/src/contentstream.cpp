@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <set>
 #include <sstream>
 
@@ -141,6 +142,62 @@ std::map<std::string, std::string> colorspace_names(QPDFObjectHandle res) {
     return out;
 }
 
+std::string ocg_name(QPDFObjectHandle o) {
+    if (!o.isDictionary() || !o.hasKey("/Name")) return "";
+    auto n = o.getKey("/Name");
+    return n.isString() ? n.getUTF8Value() : n.isName() ? strip_slash(n.getName()) : "";
+}
+
+std::vector<QPDFObjectHandle> ocgs_of(QPDFObjectHandle obj) {
+    if (!obj.isDictionary()) return {};
+    std::string t = obj.hasKey("/Type") && obj.getKey("/Type").isName() ? obj.getKey("/Type").getName() : "";
+    if (t == "/OCG") return {obj};
+    if (t == "/OCMD") {
+        if (!obj.hasKey("/OCGs")) return {};
+        auto g = obj.getKey("/OCGs");
+        if (g.isArray()) return g.getArrayAsVector();
+        return {g};
+    }
+    return {};
+}
+
+// ISO 19593-1: /GTS_Metadata << /GTS_ProcStepsGroup /Structural /GTS_ProcStepsType /Cutting >> på lagret.
+struct ProcStep {
+    std::string group, type, layer;
+};
+
+std::string name_or_string(QPDFObjectHandle o) {
+    return o.isName() ? strip_slash(o.getName()) : o.isString() ? o.getUTF8Value() : "";
+}
+
+std::optional<ProcStep> proc_step(QPDFObjectHandle ocg) {
+    if (!ocg.isDictionary() || !ocg.hasKey("/GTS_Metadata")) return std::nullopt;
+    auto md = ocg.getKey("/GTS_Metadata");
+    if (!md.isDictionary() || !md.hasKey("/GTS_ProcStepsGroup")) return std::nullopt;
+    ProcStep s{name_or_string(md.getKey("/GTS_ProcStepsGroup")),
+               md.hasKey("/GTS_ProcStepsType") ? name_or_string(md.getKey("/GTS_ProcStepsType")) : "", ocg_name(ocg)};
+    if (s.group.empty()) return std::nullopt;
+    return s;
+}
+
+// Det första bearbetningssteget som en /OC-egenskap (OCG eller OCMD) hör till.
+std::optional<ProcStep> proc_step_of(QPDFObjectHandle oc) {
+    for (auto& g : ocgs_of(oc))
+        if (auto s = proc_step(g)) return s;
+    return std::nullopt;
+}
+
+// Rollen för innehåll i ett bearbetningssteg: stans/big är stanslinje, punktskrift är punktskrift,
+// övriga (mått, positioner, förklaringar …) är teknisk information. Inget av det trycks.
+std::string step_role(const ProcStep& s) {
+    std::string g = s.group;
+    for (auto& c : g) c = (char)std::tolower((unsigned char)c);
+    if (g == "structural") return "dieline";
+    if (g == "braille") return "braille";
+    if (g == "varnish") return "varnish";
+    return "technical";
+}
+
 }  // namespace
 
 namespace detail {
@@ -152,9 +209,11 @@ Bytes qpdf_save(QPDF& q) { return save(q); }
 
 SpotRules default_spot_rules() {
     // ordningen spelar roll: första matchande roll gäller
+    // "structural": ISO 19593-namn på stans- och biglinjer (Structural, Structural - Punching …).
+    // "lack" men inte "Black" (en svart dekorfärg); "Blanklack", "UV-lack" och "Spotlack" är lack.
     return {{"braille", "(?i)braille|punktskrift|blindskrift|emboss|prägl"},
-            {"dieline", "(?i)cut|die|stans|kiss|crease|perf"},
-            {"varnish", "(?i)varnish|lack|foil|folie|hot ?stamp"}};
+            {"dieline", "(?i)cut|die|stans|kiss|crease|perf|structural"},
+            {"varnish", "(?i)varnish|(?<!b)lack|foil|folie|hot ?stamp"}};
 }
 
 std::vector<std::vector<Pt>> SpotAnalysis::polygons(const std::string& role) const {
@@ -214,10 +273,34 @@ SpotAnalysis analyze_spots(const Bytes& data, int page_index, const SpotRules& r
     };
     static const std::set<std::string> paint_ops{"S", "s", "f", "F", "f*", "B", "B*", "b", "b*", "n"};
 
+    // Markerat innehåll: /OC /Pr1 BDC … EMC. Inom ett ISO 19593-bearbetningssteg får allt innehåll
+    // stegets roll (oavsett färg) och tas bort ur den sanerade PDF:en – stegen trycks inte.
+    auto res = page.getAttribute("/Resources", false);
+    auto props = res.isDictionary() && res.hasKey("/Properties") ? res.getKey("/Properties") : QPDFObjectHandle::newNull();
+    std::vector<std::optional<ProcStep>> marked;
+    auto current_step = [&]() -> const ProcStep* {
+        for (auto it = marked.rbegin(); it != marked.rend(); ++it)
+            if (*it) return &**it;
+        return nullptr;
+    };
+
     for (auto& ins : ops) {
         const std::string& o = ins.op;
         const auto& a = ins.operands;
         bool keep = true;
+        if (o == "BDC" && a.size() >= 2 && a[0].isName() && a[0].getName() == "/OC") {
+            QPDFObjectHandle oc = a[1];
+            if (oc.isName() && props.isDictionary() && props.hasKey(oc.getName())) oc = props.getKey(oc.getName());
+            marked.push_back(proc_step_of(oc));
+        } else if (o == "BDC" || o == "BMC") {
+            marked.push_back(std::nullopt);
+        } else if (o == "EMC") {
+            if (!marked.empty()) marked.pop_back();
+        }
+        const ProcStep* step = current_step();
+        if (step && (o == "Do" || o == "sh" || o == "BI" || o == "ID" || o == "EI" || o == "Tj" || o == "TJ" || o == "'" ||
+                     o == "\""))
+            continue;   // bilder, skuggningar och text i ett bearbetningssteg
         if (o == "q") stack.push_back({ctm, stroke_spot, fill_spot});
         else if (o == "Q") {
             if (!stack.empty()) {
@@ -265,13 +348,15 @@ SpotAnalysis analyze_spots(const Bytes& data, int page_index, const SpotRules& r
             close_cur();
             bool strokes = o == "S" || o == "s" || o == "B" || o == "B*" || o == "b" || o == "b*";
             bool fills = o == "f" || o == "F" || o == "f*" || o == "B" || o == "B*" || o == "b" || o == "b*";
-            std::string s_role = strokes ? role_of(stroke_spot) : "";
-            std::string f_role = fills ? role_of(fill_spot) : "";
+            std::string s_role = strokes ? (step ? step_role(*step) : role_of(stroke_spot)) : "";
+            std::string f_role = fills ? (step ? step_role(*step) : role_of(fill_spot)) : "";
             std::vector<std::vector<Pt>> polys;
             for (auto& p : subpaths)
                 if (p.size() >= 2) polys.push_back(p);
-            if (!s_role.empty() && !polys.empty()) result.paths.push_back({s_role, *stroke_spot, "stroke", polys});
-            if (!f_role.empty() && !polys.empty()) result.paths.push_back({f_role, *fill_spot, "fill", polys});
+            // namnet: dekorfärgen, eller lagret när steget målas i processfärger
+            auto name_of = [&](const std::optional<std::string>& spot) { return spot ? *spot : step ? step->layer : std::string(); };
+            if (!s_role.empty() && !polys.empty()) result.paths.push_back({s_role, name_of(stroke_spot), "stroke", polys});
+            if (!f_role.empty() && !polys.empty()) result.paths.push_back({f_role, name_of(fill_spot), "fill", polys});
             // sanering: ta bort målningen i icke-tryckande färger
             if (o != "n" && (!s_role.empty() || !f_role.empty())) {
                 bool stroke_keep = strokes && s_role.empty();
@@ -300,25 +385,6 @@ SpotAnalysis analyze_spots(const Bytes& data, int page_index, const SpotRules& r
 // ---------------------------------------------------------------- lager
 
 namespace {
-
-std::string ocg_name(QPDFObjectHandle o) {
-    if (!o.isDictionary() || !o.hasKey("/Name")) return "";
-    auto n = o.getKey("/Name");
-    return n.isString() ? n.getUTF8Value() : n.isName() ? strip_slash(n.getName()) : "";
-}
-
-std::vector<QPDFObjectHandle> ocgs_of(QPDFObjectHandle obj) {
-    if (!obj.isDictionary()) return {};
-    std::string t = obj.hasKey("/Type") && obj.getKey("/Type").isName() ? obj.getKey("/Type").getName() : "";
-    if (t == "/OCG") return {obj};
-    if (t == "/OCMD") {
-        if (!obj.hasKey("/OCGs")) return {};
-        auto g = obj.getKey("/OCGs");
-        if (g.isArray()) return g.getArrayAsVector();
-        return {g};
-    }
-    return {};
-}
 
 std::vector<Regex> compile_rules(const std::vector<std::string>& rules) {
     static const std::string special = ".*+?[]()|^$\\";
@@ -461,8 +527,11 @@ LayerInfo layers_of(QPDF& qpdf, int page_index) {
             }
         }
         if (ocp.hasKey("/OCGs"))
-            for (auto& g : ocp.getKey("/OCGs").getArrayAsVector())
-                info.ocgs.push_back({ocg_name(g), !off.count(g.getObjGen()), used.count(g.getObjGen()) > 0});
+            for (auto& g : ocp.getKey("/OCGs").getArrayAsVector()) {
+                Ocg o{ocg_name(g), !off.count(g.getObjGen()), used.count(g.getObjGen()) > 0, "", ""};
+                if (auto s = proc_step(g)) o.step_group = s->group, o.step_type = s->type;
+                info.ocgs.push_back(o);
+            }
     }
     std::set<std::string> spots;
     if (res.isDictionary() && res.hasKey("/ColorSpace")) {

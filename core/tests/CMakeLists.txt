@@ -38,3 +38,23 @@ add_executable(printcmp_fonts_tests test_main.cpp test_fonts.cpp)
 target_link_libraries(printcmp_fonts_tests PRIVATE pc_docview pc_pdf pc_core)
 target_compile_definitions(printcmp_fonts_tests PRIVATE PC_TESTDATA="${CMAKE_SOURCE_DIR}/../testdata")
 add_test(NAME fonts COMMAND printcmp_fonts_tests)
+
+# Dekorfärgernas roller och ISO 19593-bearbetningssteg
+add_executable(printcmp_steps_tests test_main.cpp test_steps.cpp)
+target_link_libraries(printcmp_steps_tests PRIVATE pc_docview pc_pdf pc_core opencv_core)
+add_test(NAME steps COMMAND printcmp_steps_tests)
+
+# Verkliga tryckfiler (GWG:s testsviter, Avery-mallar): hämtas till byggkatalogen när testet körs och
+# checkas aldrig in. Av som standard (kräver nätet): cmake -D FDC_REALWORLD_TESTS=ON …, sedan
+# ctest -L realworld.
+option(FDC_REALWORLD_TESTS "Tester mot verkliga tryckfiler som hämtas från nätet" OFF)
+if(FDC_REALWORLD_TESTS)
+  set(_rw "${CMAKE_BINARY_DIR}/realworld")
+  add_test(NAME realworld_fetch COMMAND ${CMAKE_COMMAND} -D DEST=${_rw} -P ${CMAKE_CURRENT_SOURCE_DIR}/realworld/fetch.cmake)
+  set_tests_properties(realworld_fetch PROPERTIES FIXTURES_SETUP realworld LABELS realworld)
+  add_executable(printcmp_realworld_tests test_main.cpp realworld/test_realworld.cpp)
+  target_link_libraries(printcmp_realworld_tests PRIVATE pc_docview pc_pdf pc_core opencv_core)
+  target_include_directories(printcmp_realworld_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  add_test(NAME realworld COMMAND printcmp_realworld_tests)
+  set_tests_properties(realworld PROPERTIES FIXTURES_REQUIRED realworld LABELS realworld ENVIRONMENT "FDC_REALWORLD_DIR=${_rw}")
+endif()

@@ -55,12 +55,22 @@ public sealed record PdfLayer
     public string Name { get; init; } = "";
     public bool DefaultOn { get; init; }
     public bool UsedOnPage { get; init; }
+    /// <summary>ISO 19593-bearbetningssteg (stansning, mått, positioner, punktskrift …); null för vanligt innehåll.
+    /// Bearbetningsstegen trycks inte.</summary>
+    public ProcessingStep? ProcessingStep { get; init; }
+}
+
+/// <summary>ISO 19593-1: grupp (t.ex. "Structural", "Dimensions", "Braille") och typ (t.ex. "Cutting", "Creasing").</summary>
+public sealed record ProcessingStep
+{
+    public string Group { get; init; } = "";
+    public string Type { get; init; } = "";
 }
 
 public sealed record PdfSpot
 {
     public string Name { get; init; } = "";
-    /// <summary>"dieline", "varnish", "braille" eller null för en tryckande dekorfärg.</summary>
+    /// <summary>"dieline", "varnish", "braille", "technical" (ISO 19593-mått, positioner …) eller null för en tryckande dekorfärg.</summary>
     public string? Role { get; init; }
 }
 

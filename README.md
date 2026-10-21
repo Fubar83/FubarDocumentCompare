@@ -22,7 +22,7 @@ core/
     CMakeLists.txt            PUBLIC- och PRIVATE-beroenden
   capi/                       FubarDocumentCompare.Native.dll: det stabila C-API:t (include/fdc/fdc.h, fdc_*)
   apps/                       printcmp-cli, printcmp-testgen, printcmp-eval, printcmp-img (tunna skal)
-  tests/                      ctest: core, capi, smoke, architecture, imgproc, docview, fonts
+  tests/                      ctest: core, capi, smoke, architecture, imgproc, docview, fonts, steps; realworld (valfritt)
 ```
 
 | Lager | Bibliotek | Ansvar | Beroenden |
@@ -331,6 +331,44 @@ core/build/windows/bin/printcmp-img descreen utsnitt.png utan_raster.png
 
 `descreen` tar bort det fina rastret, 3–7 px vid 600 dpi. Grövre moiré mellan färgplåtarna är
 lågfrekvent innehåll i bilden och går inte att filtrera bort utan att även text försvinner.
+
+## Stanslinjer, lack och ISO 19593-bearbetningssteg
+
+Det som inte trycks känns igen på två sätt:
+
+- **Dekorfärgens namn**, enligt standardreglerna (första träffen gäller):
+  - punktskrift: `braille|punktskrift|blindskrift|emboss|prägl`;
+  - stanslinje: `cut|die|stans|kiss|crease|perf|structural`;
+  - lack: `varnish|lack|foil|folie|hot stamp`, men inte "Black" (en svart dekorfärg).
+- **ISO 19593-1-bearbetningssteg:** lager (OCG) med `/GTS_Metadata` (`GTS_ProcStepsGroup` och
+  `GTS_ProcStepsType`).
+  - Allt innehåll i ett sådant lager får stegets roll, oavsett färg:
+    - `Structural` ger stanslinje (`dieline`);
+    - `Braille` ger punktskrift;
+    - övriga (mått, positioner, förklaringar) ger `technical`.
+  - Innehållet tas bort ur den sanerade PDF:en som jämförelsen och "bara tryck"-varianten renderar.
+  - Metadata visar steget per lager (`processingStep: {group, type}`).
+
+### Verkliga tryckfiler (valfritt test)
+
+`realworld` kör mot verkliga, offentliga tryckfiler:
+
+- Ghent Workgroups Processing Steps Test Suite (ISO 19593-lager för förpackningar);
+- Ghent Workgroups PDF Output Suite 5.0, testsidorna (PDF/X-4);
+- Averys mallar för etiketter på rulle (DIELINE, BLEEDLINE och SAFELINE som dekorfärger).
+
+Filerna saknar villkor för vidarespridning. De hämtas därför till byggkatalogen och kontrolleras mot
+SHA-256 (`core/tests/realworld/fetch.cmake`), men checkas aldrig in:
+
+```powershell
+cmake --preset windows -S core -D FDC_REALWORLD_TESTS=ON
+cmake --build core/build/windows
+ctest --test-dir core/build/windows -L realworld --output-on-failure
+```
+
+Testet kontrollerar att varje fil går att läsa, rendera och kartlägga. Det kontrollerar också att
+alla 40 patchar med ett Structural-lager ger stanslinjer, att dekorfärgen "Black" inte blir lack och
+att Averys DIELINE blir stanslinje.
 
 ## Testmaterial och utvärdering
 
