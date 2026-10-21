@@ -1,10 +1,8 @@
 # C++-kärnan
 core/build/
-# .NET och webb
+# .NET
 bin/
 obj/
-node_modules/
-web/server/wwwroot/js/
 # genererat testmaterial och mätresultat
 bench*/
 bench*.log

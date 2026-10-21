@@ -7,10 +7,7 @@ textlager eller avkodas (streckkoder).
 ```
 core/              C++20-kärnan: lagrade bibliotek, C-API (FubarDocumentCompare.Native.dll) och printcmp-cli
 bindings/dotnet/   .NET-biblioteket FubarDocumentCompare med xUnit-tester; FubarDocumentCompare.slnx bygger allt i .NET
-web/server/        webbtjänst FubarDocumentCompare.Web (ASP.NET minimal API, S3/filsystem, Server-Sent Events)
-web/tests/         webbtjänstens integrationstester (WebApplicationFactory)
 examples/dotnet/   körbara C#-exempel på vanliga uppgifter (examples/dotnet/README.md)
-web/client/        webbgränssnitt i TypeScript, byggs till web/server/wwwroot/js
 testdata/          små genererade fall med facit, för testerna
 docs/              algoritmer, testmaterial och mätningar (docs/algoritmer.md)
 ```
@@ -65,8 +62,7 @@ Principer:
   - `jobspec::run` kör den.
   - `pc_report` skriver bara utdata.
 - **Tunna program:** kommandoradsprogrammen tolkar argument; logiken finns i biblioteken.
-- **Stabil yta utåt:** C-API:t är det enda som exporteras. .NET-bindningen och webbtjänsten
-  använder bara det.
+- **Stabil yta utåt:** C-API:t är det enda som exporteras. .NET-biblioteket använder bara det.
 
 PDFium skyddas av ett globalt lås. Allt annat är trådsäkert, och flera jobb körs parallellt
 (motorn begränsar antalet).
@@ -155,74 +151,6 @@ Namnrymder: `FubarDocumentCompare` (motor, fel, inställningar), `.Pdf`, `.Imagi
 Den inbyggda DLL:en heter `FubarDocumentCompare.Native.dll` och .NET-sammansättningen
 `FubarDocumentCompare.dll`.
 
-### Webbtjänsten
-
-`web/server` (FubarDocumentCompare.Web) är tillståndslös. Dokument, kundernas typsnitt och sessioner
-ligger i ett objektlager (S3, eller filsystemet vid utveckling), så servrar kan läggas till och tas bort
-fritt. Biblioteket vet inget om kunder; webblagret avgör kunden per anrop:
-
-- i första hand ur anspråket `tenant` för en inloggad användare;
-- annars ur rubriken `X-Tenant-Id`, om `Tenancy:AllowHeader` är på;
-- annars `Tenancy:Default`.
-
-Allt i lagret ligger under `tenants/{kund}/` (se `Storage/Keys.cs`).
-
-| | |
-|---|---|
-| `POST /api/documents` | PDF (multipart, `file`) → 201 post + metadata; samma innehåll igen → 200 med samma dokument |
-| `GET /api/documents`, `GET/DELETE /api/documents/{id}` | lista, post + metadata (typsnittens status mot kundens typsnitt), ta bort |
-| `GET …/{id}/pages/{n}/image` | bild: `dpi`, `box`, `pixels` (rgb/rgba/gray), `format` (png/jpeg), `quality`, `x/y/width/height` |
-| `GET …/{id}/pages/{n}/tiles/{level}` | rutnätet (`size`, `box`); nivå L = 18 · 2^L dpi |
-| `GET …/{id}/pages/{n}/tiles/{level}/{x}/{y}` | en ruta, pixellik med hela sidan |
-| `GET …/{id}/pages/{n}/overlays` | bildkarta i mm: `kinds=words,objects,spots,barcodes`, `box` |
-| `POST …/{id}/fonts/validate` | fontfil + `fontName` → stämmer filen med typsnittet i PDF:en? |
-| `GET/POST /api/fonts`, `DELETE /api/fonts/{sha256}` | kundens typsnitt; med `documentId` + `fontName` kontrolleras filen först (422 om den inte stämmer) |
-| `POST/GET /api/sessions`, `GET/PUT/DELETE /api/sessions/{id}` | gränssnittets egna JSON-data per kund; `PUT` med `If-Match` → 412 om någon annan hunnit före |
-
-- **Variant** för bilder, rutor och överlägg: `includeLayers`, `excludeLayers`, `excludeSpots`
-  (kommaseparerade) och `hideNonPrinting`.
-- **Cachning:** bilder, rutor, överlägg och metadata har en ETag (innehåll + parametrar + kundens
-  typsnitt) och `Cache-Control: private, no-cache`.
-  - Webbläsaren sparar svaret, och `If-None-Match` ger 304 utan att något renderas.
-  - Kundens typsnitt kan ändras utan att adressen ändras, därför frågar webbläsaren varje gång.
-- **Fel** returneras som ProblemDetails (`application/problem+json`): 400 ogiltigt, 401 kund saknas,
-  404, 412, 415 fel filformat och 422 PDF eller fontfil som inte stämmer.
-- **Konfiguration** (appsettings eller miljövariabler, t.ex. `Storage__Kind=S3`):
-  - `Storage:Kind` = FileSystem eller S3, `Storage:Root`, `Storage:Bucket`, `Storage:Prefix`,
-    `Storage:ServiceUrl` (MinIO, R2 …);
-  - `Tenancy:*`;
-  - `Fonts:Fallback` (Builtin), `Fonts:ManifestTtl`;
-  - `Engine:MaxParallelJobs`, `Engine:CacheBytes`.
-  - I Development är rubriken tillåten och kunden heter `dev`.
-- **S3 och flera servrar:** villkorade skrivningar (If-None-Match/If-Match) skyddar
-  typsnittslistan och sessionerna när flera servrar skriver samtidigt. Filsystemslagret är bara
-  atomärt inom en process.
-
-Det första API:et finns kvar (`Legacy/LegacyEndpoints.cs`) tills jämförelserna körs i kö. Det
-håller referenser och jobb i minnet på en server, och det nuvarande gränssnittet använder det:
-
-| | |
-|---|---|
-| `POST /api/references` | PDF (+ profil, box, sida, uteslutna lager/dekorfärger) → lager, dekorfärger, streckkoder, mått |
-| `POST /api/jobs/compare` | referens-id + prov (TIFF/PNG/JPEG/PDF) + valfria förväntade uppgifter → jobb-id |
-| `POST /api/jobs/documents` | två PDF:er, layout `reflow`/`fixed` → jobb-id |
-| `POST /api/jobs/data-check` | PDF + förväntat (.txt/.csv/.json) → jobb-id |
-| `GET /api/jobs/{id}/events` | `text/event-stream`, hela förloppet (även vid sen anslutning; `Last-Event-ID` stöds) |
-| `GET /api/jobs/{id}/result` | sammanfattning, fynd, etiketter, datafält (JSON) |
-| `GET /api/jobs/{id}/crops/{i}/{reference\|sample}` | utsnitt kring ett fynd (PNG) |
-| `GET /api/jobs/{id}/report` | HTML-rapporten |
-| `DELETE /api/jobs/{id}` | avbryt; ett färdigt jobb städas bort |
-
-Uppladdade filer sparas under ett eget namn per jobb (klientens filnamn används aldrig som
-sökväg) och tas bort efter två timmar.
-
-Gränssnittet har tre flikar: etikett/ark, dokument och datakontroll.
-
-- Arket ritas upp medan etiketterna hittas och färgas efter status när de analyserats.
-- Fynden kan filtreras på typ och säkerhetsgrad, och varje fynd visar utsnitt ur original
-  och prov sida vid sida.
-- Godkända fynd (efter fingeravtryck) sparas i webbläsaren och döljs.
-
 ## Bygga
 
 Verktyg (winget):
@@ -232,7 +160,7 @@ winget install Microsoft.VisualStudio.2022.BuildTools --override "--quiet --wait
 ```
 
 ```bash
-winget install Kitware.CMake Git.Git Microsoft.DotNet.SDK.8 OpenJS.NodeJS.LTS
+winget install Kitware.CMake Git.Git Microsoft.DotNet.SDK.8
 ```
 
 ```bash
@@ -256,13 +184,6 @@ Utdata hamnar i `core/build/windows/bin`: `FubarDocumentCompare.Native.dll`, `pr
 ```bash
 dotnet test bindings/dotnet/FubarDocumentCompare.slnx -c Release
 ```
-
-```bash
-dotnet run --project web/server -c Release --urls http://localhost:5080
-```
-
-Webbservern bygger gränssnittet (`npm install` första gången, sedan `tsc`) när
-TypeScript-källorna ändrats; `-p:SkipClientBuild=true` hoppar över det.
 
 Kommandoraden tar en JobSpec (`printcmp.jobspec/1`) eller två PDF:er:
 
@@ -315,7 +236,7 @@ med trycket. Anroparen kan tillhandahålla fontfilerna som en **uppsättning** (
 var fonts = engine.FontSets.Create(await LoadTenantFontSources(tenant), FontFallback.Builtin);
 
 var check = await engine.FontValidator.ValidateAsync(pdf, "AcmeSans-Regular", upload);
-if (!check.Ok) return Results.BadRequest(check);          // t.ex. 37 tecken med fel bredd
+if (!check.Ok) Console.WriteLine($"fel fil: {check.WidthMismatches} tecken med fel bredd");
 
 var meta = await engine.PdfInspector.GetMetadataAsync(pdf, fonts);   // status per typsnitt
 using var img = await engine.PdfRenderer.RenderAsync(pdf, new RenderOptions { Dpi = 150, Fonts = fonts });
@@ -505,6 +426,4 @@ likvärdiga, testfall än prototypen gav.
   Linux/macOS saknas.
 - Registreringen är inte optimerad; den står för halva tiden per ark.
 - Utsnitt (`fdc_result_render_crop`) finns för etikett/ark, inte för dokumentläget.
-- Webbtjänsten har ingen inloggning och håller jobben i minnet. Den är tänkt för ett
-  internt nät eller som exempel på hur API:t används.
 - Övriga begränsningar i analysen står i `docs/algoritmer.md`.
