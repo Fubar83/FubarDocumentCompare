@@ -9,3 +9,4 @@
 #include "printcmp/imgproc/match.hpp"
 #include "printcmp/imgproc/measure.hpp"
 #include "printcmp/imgproc/region.hpp"
+#include "printcmp/imgproc/transform.hpp"

@@ -68,6 +68,24 @@ public sealed unsafe partial class Comparer
     /// Startar en jämförelse av ett tryckt prov mot originalet. Händelserna läses från <see cref="Job.Events"/>
     /// och resultatet från <see cref="Job.Completion"/>.
     /// </summary>
+    /// <summary>
+    /// Etiketterna på ett ark utan att jämföra dem: läge, hörn, vridning (även 90/180/270°), rad och kolumn.
+    /// Arket behöver sin upplösning (<see cref="Imaging.Image.Dpi"/>).
+    /// </summary>
+    public LocatedSheet LocateLabels(Reference reference, Imaging.Image sheet, LocateOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(reference);
+        ArgumentNullException.ThrowIfNull(sheet);
+        var o = options ?? new LocateOptions();
+        var json = $"{{\"rotations\":[{string.Join(',', o.Rotations)}],\"maxSkewDeg\":{o.MaxSkewDeg.ToString(System.Globalization.CultureInfo.InvariantCulture)}," +
+                   $"\"expectedCount\":{o.ExpectedCount}}}";
+        using var lease = new HandleLease(sheet.Handle);
+        using var s = new Utf8Scope();
+        Native.Check(Native.fdc_reference_locate(Handle, reference.Handle, lease.Pointer, s.Ptr(json), out var buffer));
+        return System.Text.Json.JsonSerializer.Deserialize(Native.TakeBuffer(buffer), LocateJsonContext.Default.LocatedSheet)
+               ?? throw new DocumentCompareException(Status.Internal, "tomt svar från lokaliseringen");
+    }
+
     public Job StartCompare(Reference reference, Sample sample, CompareOptions? options = null)
     {
         using var s = new Utf8Scope();

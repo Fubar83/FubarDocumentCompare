@@ -21,7 +21,6 @@ public enum Side { Reference = 0, Sample = 1 }
 
 public enum EventType { Progress = 0, SheetLoaded, LabelLocated, FoldDetected, LabelAnalysed, Warning, Completed, Failed, Cancelled }
 
-public readonly record struct PointD(double X, double Y);
 
 
 /// <summary>
@@ -173,3 +172,37 @@ internal sealed record MaskJson(
 
 [System.Text.Json.Serialization.JsonSerializable(typeof(MaskJson[]))]
 internal sealed partial class MaskJsonContext : System.Text.Json.Serialization.JsonSerializerContext;
+
+/// <summary>Var etiketterna ska letas: tillåtna vridningar (i 90°-steg), största snedhet och förväntat antal.</summary>
+public sealed record LocateOptions
+{
+    public IReadOnlyList<int> Rotations { get; init; } = [0, 90, 180, 270];
+    public double MaxSkewDeg { get; init; } = 4.0;
+    /// <summary>0 = okänt.</summary>
+    public int ExpectedCount { get; init; }
+}
+
+/// <summary>En etikett på arket: originalets hörn (övre vänster, övre höger, nedre höger, nedre vänster) i arkets px.</summary>
+public sealed record LocatedLabel
+{
+    public int Index { get; init; }
+    public int Row { get; init; }
+    public int Col { get; init; }
+    /// <summary>Vridning moturs, 0–360° (t.ex. 183 = upp och ned och 3° sned).</summary>
+    public double AngleDeg { get; init; }
+    public double Score { get; init; }
+    public PointD Center { get; init; }
+    public IReadOnlyList<PointD> Corners { get; init; } = [];
+}
+
+public sealed record LocatedSheet
+{
+    /// <summary>Arkets snedhet, −45..45° (median över etiketterna).</summary>
+    public double SheetAngleDeg { get; init; }
+    public double Dpi { get; init; }
+    public IReadOnlyList<LocatedLabel> Labels { get; init; } = [];
+}
+
+[System.Text.Json.Serialization.JsonSourceGenerationOptions(PropertyNamingPolicy = System.Text.Json.Serialization.JsonKnownNamingPolicy.CamelCase)]
+[System.Text.Json.Serialization.JsonSerializable(typeof(LocatedSheet))]
+internal sealed partial class LocateJsonContext : System.Text.Json.Serialization.JsonSerializerContext;

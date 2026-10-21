@@ -273,6 +273,7 @@ tillbaka, flyttas eller skalas till en annan bild, eller hamna i andra områden.
 | `fft.hpp` | spektrum, frekvensfilter, notch och `descreen`, rastertoppar och period, DFT-faltning, faskorrelation |
 | `match.hpp` | `find_template`, `find_features` (ORB och homografi, flera förekomster), `match_map`, `peaks` |
 | `measure.hpp` | `measure` (yta, medel, std, min/max, tyngdpunkt), `blobs`, `draw_regions`, `draw_matches`, `overlay`, `visualize` |
+| `transform.hpp` | `rotate` (även utan beskärning), `rotate90`, `flip`, `scale`, `resize_to`, `crop`, `warp_affine`, `warp_quad` (fyrhörning till upprätt bild), `estimate_skew` och `deskew` |
 
 Filtren:
 
@@ -332,6 +333,54 @@ core/build/windows/bin/printcmp-img descreen utsnitt.png utan_raster.png
 
 `descreen` tar bort det fina rastret, 3–7 px vid 600 dpi. Grövre moiré mellan färgplåtarna är
 lågfrekvent innehåll i bilden och går inte att filtrera bort utan att även text försvinner.
+
+### Snedhet, transformer och kedjor i C-API:t och .NET
+
+**Snedheten** hittas automatiskt ur kanternas riktningar (textrader, linjer, etikett- och arkkanter).
+
+- Först ett grovt histogram över gradientriktningarna, modulo 90°.
+- Sedan förfining med projektionsprofiler: kantkartan vrids i steg om 0,05° kring den grova
+  vinkeln, och den vinkel där rad- och kolumnsummorna är skarpast vinner. Gradienten ensam dras mot
+  axlarna av trappstegen i interpolerade kanter.
+- Testerna träffar inom ±0,15° (0–11,5°).
+
+**Etiketterna** kan hittas utan jämförelse: `compare::locate_labels`, `fdc_reference_locate` och
+`Comparer.LocateLabels`.
+
+- Resultatet är läge, hörn, rad och kolumn, och vridning 0–360° (även 90/180/270°).
+- Vinkeln förfinas per etikett: etiketten rätas upp med de grova hörnen och snedheten mäts igen.
+- Med hörnen ger `WarpQuad` etiketten upprätt i originalets storlek.
+
+**Kedjor** körs i ett anrop: `fdc_image_process` tar operationerna som JSON, och .NET bygger dem med
+`ImageChain`:
+
+```csharp
+var chain = ImageChain.Build(c => c
+    .Deskew()                                                   // automatisk snedhet
+    .On([ImageRegion.Rect(0, 0, 800, 400)], r => r.Gaussian(2))  // bara i området
+    .Kernel(new double[,] { { 0, -1, 0 }, { -1, 5, -1 }, { 0, -1, 0 } })
+    .Gray().AdaptiveThreshold(31, 10));
+using var result = engine.ImageProcessor.Apply(scan, chain, out var notes);   // notes.Deskewed: vinkeln
+var skew = engine.ImageProcessor.EstimateSkew(scan);
+
+var sheet = engine.Comparer.LocateLabels(reference, scan);                     // vridning per etikett
+foreach (var l in sheet.Labels)
+    using (var upright = engine.ImageProcessor.Apply(scan, ImageChain.Build(c => c.WarpQuad(l.Corners)))) { … }
+```
+
+| Slag | Operationer |
+|---|---|
+| Ton | `Gray`, `Invert`, `Gamma`, `Normalize`, `Clahe`, `Linear` (kontrast/ljushet) |
+| Utjämning, skärpa | `Gaussian`, `Box`, `Median`, `Bilateral`, `Sharpen` |
+| Kanter, matriser | `Sobel`, `Laplacian`, `Gradient`, `Edges` (Canny), `Kernel` (egen matris) |
+| Tröskel, morfologi | `Threshold`, `Otsu`, `AdaptiveThreshold`, `Morph` (erode, dilate, open, close, gradient, top-hat, black-hat) |
+| Frekvensplanet | `LowPass`, `HighPass`, `BandPass`, `BandStop`, `Descreen` (tar bort tryckrastret) |
+| Geometri | `Rotate`, `Rotate90`, `Flip`, `Scale`, `Resize`, `Crop`, `Deskew`, `WarpQuad`, `WarpAffine` |
+
+- Filter kan begränsas till områden (`On(regions, …)`: rektangel, polygon, cirkel); resten av
+  bilden lämnas orörd.
+- Geometri gäller alltid hela bilden.
+- `ImageCodec.Load` läser TIFF/PNG/JPEG och `ImageProcessor.FromPixels` tar egna pixlar.
 
 ## Stanslinjer, lack och ISO 19593-bearbetningssteg
 

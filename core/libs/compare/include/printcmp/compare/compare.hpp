@@ -8,3 +8,4 @@
 #include "printcmp/compare/textdiff.hpp"
 #include "printcmp/compare/document.hpp"
 #include "printcmp/compare/datacheck.hpp"
+#include "printcmp/compare/locate.hpp"

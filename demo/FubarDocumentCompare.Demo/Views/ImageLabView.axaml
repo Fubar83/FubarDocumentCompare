@@ -1,0 +1,93 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FubarDocumentCompare.Demo.ViewModels"
+             xmlns:c="using:FubarDocumentCompare.Demo.Controls"
+             x:Class="FubarDocumentCompare.Demo.Views.ImageLabView"
+             x:DataType="vm:ImageLabViewModel"
+             x:Name="Root">
+  <!-- Källa och kedja till vänster, resultatet i mitten, upprätade etiketter till höger. -->
+  <Grid ColumnDefinitions="330,*,250" Margin="0,8,0,0">
+    <ScrollViewer>
+      <StackPanel Spacing="4" Margin="0,0,12,0">
+        <TextBlock Classes="h2" Text="Källa" Margin="0" />
+        <WrapPanel>
+          <Button Content="Senaste demoarket" Command="{Binding UseDemoSheetCommand}" Margin="0,0,6,6" />
+          <Button Content="Scan …" Click="OpenScan" Margin="0,0,6,6" />
+          <Button Content="PDF-sida …" Click="OpenPdf" Margin="0,0,6,6" />
+        </WrapPanel>
+        <TextBlock Text="{Binding SourceInfo}" TextWrapping="Wrap" Classes="muted" FontSize="11" />
+        <TextBlock Classes="h2" Text="Automatik" />
+        <WrapPanel>
+          <Button Content="Uppskatta snedhet" Command="{Binding EstimateSkewCommand}" Margin="0,0,6,6" />
+          <Button Content="Hitta etiketter …" Click="Locate" Margin="0,0,6,6"
+                  ToolTip.Tip="Mot originalet (PDF): läge, hörn och vridning (även 90/180/270°)" />
+        </WrapPanel>
+        <CheckBox Content="Visa etiketterna" IsChecked="{Binding ShowLabels}" />
+        <TextBlock Classes="h2" Text="Kedja" />
+        <Grid ColumnDefinitions="*,6,Auto">
+          <ComboBox ItemsSource="{x:Static vm:ImageLabViewModel.Catalog}" SelectedItem="{Binding ToAdd}" HorizontalAlignment="Stretch">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:LabelledOp">
+                <TextBlock Text="{Binding Title}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <Button Grid.Column="2" Content="Lägg till" Command="{Binding AddStepCommand}" />
+        </Grid>
+        <ItemsControl ItemsSource="{Binding Steps}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:LabStep">
+              <Border BorderBrush="#40808080" BorderThickness="1" CornerRadius="4" Padding="6" Margin="0,4,0,0">
+                <StackPanel Spacing="2">
+                  <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                    <CheckBox IsChecked="{Binding Enabled}" />
+                    <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <Button Grid.Column="2" Content="↑" Padding="6,0"
+                            Command="{Binding #Root.((vm:ImageLabViewModel)DataContext).MoveUpCommand}" CommandParameter="{Binding}" />
+                    <Button Grid.Column="3" Content="✕" Padding="6,0" Margin="4,0,0,0"
+                            Command="{Binding #Root.((vm:ImageLabViewModel)DataContext).RemoveStepCommand}" CommandParameter="{Binding}" />
+                  </Grid>
+                  <ItemsControl ItemsSource="{Binding Params}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:StepParam">
+                        <Grid ColumnDefinitions="60,*,64">
+                          <TextBlock Text="{Binding Name}" VerticalAlignment="Center" FontSize="12" />
+                          <Slider Grid.Column="1" Minimum="{Binding Min}" Maximum="{Binding Max}" Value="{Binding Value}"
+                                  TickFrequency="{Binding Step}" IsSnapToTickEnabled="True" Margin="4,0" />
+                          <TextBlock Grid.Column="2" Text="{Binding Value, StringFormat='{}{0:0.###}'}" VerticalAlignment="Center" FontSize="12" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <CheckBox Content="Bara på etiketterna" IsChecked="{Binding OnlyLabels}" IsVisible="{Binding IsFilter}" FontSize="12" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <Button Content="Töm kedjan" Command="{Binding ClearStepsCommand}" Margin="0,6,0,0" />
+      </StackPanel>
+    </ScrollViewer>
+    <Grid Grid.Column="1" RowDefinitions="*,Auto">
+      <Border Background="#2a2a2e" CornerRadius="4">
+        <c:OverlayImage Source="{Binding Output}" Shapes="{Binding Shapes}" />
+      </Border>
+      <TextBlock Grid.Row="1" Text="{Binding Status}" Margin="0,4" TextWrapping="Wrap" />
+    </Grid>
+    <ScrollViewer Grid.Column="2" Margin="8,0,0,0">
+      <StackPanel>
+        <TextBlock Classes="h2" Text="Etiketterna, upprätade" Margin="0" />
+        <ItemsControl ItemsSource="{Binding Upright}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:UprightLabel">
+              <StackPanel Margin="0,6,0,0">
+                <TextBlock Text="{Binding Title}" FontSize="11" />
+                <Border Background="#eee"><Image Source="{Binding Image}" Stretch="Uniform" MaxHeight="160" /></Border>
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

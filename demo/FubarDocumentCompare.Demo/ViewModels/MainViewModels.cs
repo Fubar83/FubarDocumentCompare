@@ -5,11 +5,20 @@ using FubarDocumentCompare.Demo.Services;
 
 namespace FubarDocumentCompare.Demo.ViewModels;
 
-public sealed class MainViewModel(DocumentCompareEngine engine)
+public sealed class MainViewModel
 {
-    public GeneratorViewModel Generator { get; } = new(engine);
-    public OwnFilesViewModel OwnFiles { get; } = new(engine);
-    public PdfViewModel Pdf { get; } = new(engine);
+    public MainViewModel(DocumentCompareEngine engine)
+    {
+        Generator = new(engine);
+        OwnFiles = new(engine);
+        Pdf = new(engine);
+        Lab = new(engine, Generator);
+    }
+
+    public GeneratorViewModel Generator { get; }
+    public OwnFilesViewModel OwnFiles { get; }
+    public PdfViewModel Pdf { get; }
+    public ImageLabViewModel Lab { get; }
     public string Version { get; } = $"FubarDocumentCompare {DocumentCompareEngine.Version} (API {DocumentCompareEngine.ApiVersion})";
 }
 
@@ -35,6 +44,7 @@ public sealed partial class GeneratorViewModel(DocumentCompareEngine engine) : O
     [ObservableProperty] private int _seed = 7;
     [ObservableProperty] private bool _busy;
     [ObservableProperty] private string _caseInfo = "";
+    [ObservableProperty] private DemoCase? _lastCase;
 
     [RelayCommand]
     private async Task GenerateAndCompare()
@@ -46,6 +56,7 @@ public sealed partial class GeneratorViewModel(DocumentCompareEngine engine) : O
             var demo = await TestSheets.CreateAsync(new TestSheets.Options(Template, Rows, Cols, Difficulty, RotationDeg, ScalePercent / 100.0, Dpi,
                                                                            Scanner, FoldProbability, Errors, Seed), CancellationToken.None);
             CaseInfo = $"{demo.Summary}\n{demo.Directory}";
+            LastCase = demo;
             await Compare.RunAsync(demo.ReferencePath, demo.SamplePath,
                                    new ReferenceOptions { Masks = demo.Masks },
                                    new CompareOptions { Rows = demo.Rows, Cols = demo.Cols, Multi = demo.Rows * demo.Cols > 1 },

@@ -309,3 +309,117 @@ TEST(capi_result_exports_in_memory) {
     fdc_result_free(res);
     fdc_reference_free(r);
 }
+
+namespace {
+
+struct Img {
+    fdc_image* p = nullptr;
+    fdc_image_info info{sizeof(fdc_image_info)};
+    explicit Img(fdc_image* h) : p(h) { if (p) fdc_image_get_info(p, &info); }
+    ~Img() { fdc_image_free(p); }
+};
+
+Img process(const Img& in, const std::string& ops, std::string* info = nullptr) {
+    fdc_image* out = nullptr;
+    fdc_buffer* b = nullptr;
+    fdc_status s = fdc_image_process(in.p, ops.c_str(), &out, info ? &b : nullptr);
+    if (s != FDC_OK) std::fprintf(stderr, "  process: %s\n", fdc_last_error());
+    if (b) {
+        *info = std::string((const char*)fdc_buffer_data(b), fdc_buffer_size(b));
+        fdc_buffer_free(b);
+    }
+    return Img(out);
+}
+
+}  // namespace
+
+TEST(capi_image_processing_chain_and_deskew) {
+    Engine en;
+    std::ifstream f(data("label/ref.pdf"), std::ios::binary);
+    std::string bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    fdc_pdf* p = nullptr;
+    fdc_pdf_load(en.e, bytes.data(), bytes.size(), &p);
+    fdc_render_options o;
+    fdc_render_options_init(&o);
+    o.dpi = 150;
+    fdc_image* raw = nullptr;
+    CHECK_EQ(fdc_pdf_render(en.e, p, &o, &raw), FDC_OK);
+    Img label(raw);
+    fdc_pdf_free(p);
+
+    auto g = process(label, R"([{"op":"gray"},{"op":"gaussian","sigma":2,"regions":[{"rect":[0,0,100,60]}]},{"op":"rotate90","turns":1}])");
+    CHECK(g.p != nullptr);
+    CHECK_EQ(g.info.channels, 1);
+    CHECK_EQ(g.info.width, label.info.height);
+    CHECK_EQ(g.info.height, label.info.width);
+
+    // vrid 4,5° och räta upp igen
+    auto tilted = process(label, R"([{"op":"rotate","degrees":4.5}])");
+    double angle = 0, conf = 0;
+    CHECK_EQ(fdc_image_estimate_skew(tilted.p, 15, &angle, &conf), FDC_OK);
+    CHECK_NEAR(angle, 4.5, 0.2);
+    std::string info;
+    auto straight = process(tilted, R"([{"op":"deskew"}])", &info);
+    auto j = nlohmann::json::parse(info);
+    CHECK_NEAR(j[0]["angleDeg"].get<double>(), 4.5, 0.2);
+    CHECK_EQ(fdc_image_estimate_skew(straight.p, 15, &angle, &conf), FDC_OK);
+    CHECK_NEAR(angle, 0.0, 0.2);
+
+    // utsnitt, skala, kärna och fyrhörning
+    auto small = process(label, R"([{"op":"crop","x":10,"y":10,"width":100,"height":50},{"op":"scale","factor":2},)"
+                                R"({"op":"kernel","matrix":[[0,-1,0],[-1,5,-1],[0,-1,0]]},)"
+                                R"({"op":"warpQuad","corners":[[0,0],[199,0],[199,99],[0,99]],"width":50,"height":25}])");
+    CHECK(small.info.width == 50 && small.info.height == 25);
+
+    fdc_image* bad = nullptr;
+    CHECK_EQ(fdc_image_process(label.p, R"([{"op":"nope"}])", &bad, nullptr), FDC_ERR_INVALID_ARGUMENT);
+    CHECK_EQ(fdc_image_process(label.p, "inte json", &bad, nullptr), FDC_ERR_INVALID_ARGUMENT);
+}
+
+TEST(capi_locate_labels_with_rotation) {
+    Engine en;
+    auto* ref = open_ref(en.e, data("label/ref.pdf"));
+    CHECK(ref != nullptr);
+    if (!ref) return;
+    // ett ark i 300 dpi med två etiketter: en vriden +3°, en vriden 183° (upp och ned och sned)
+    std::ifstream f(data("label/ref.pdf"), std::ios::binary);
+    std::string bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    fdc_pdf* p = nullptr;
+    fdc_pdf_load(en.e, bytes.data(), bytes.size(), &p);
+    fdc_render_options o;
+    fdc_render_options_init(&o);
+    o.dpi = 300;
+    o.hide_nonprinting = 1;
+    fdc_image* raw = nullptr;
+    fdc_pdf_render(en.e, p, &o, &raw);
+    fdc_pdf_free(p);
+    Img label(raw);
+    auto a = process(label, R"([{"op":"rotate","degrees":3}])");
+    auto b = process(label, R"([{"op":"rotate","degrees":183}])");
+    int W = a.info.width + b.info.width + 300, H = std::max(a.info.height, b.info.height) + 200;
+    std::vector<unsigned char> sheet((size_t)W * H * 3, 235);
+    auto paste = [&](const Img& im, int ox, int oy) {
+        for (int y = 0; y < im.info.height; ++y)
+            std::memcpy(&sheet[((size_t)(oy + y) * W + ox) * 3], im.info.data + (size_t)y * im.info.stride, (size_t)im.info.width * 3);
+    };
+    paste(a, 100, 100);
+    paste(b, 200 + a.info.width, 100);
+    fdc_image* s = nullptr;
+    CHECK_EQ(fdc_image_create(W, H, 3, sheet.data(), 0, 300, &s), FDC_OK);
+    Img sheet_img(s);
+    fdc_buffer* out = nullptr;
+    CHECK_EQ(fdc_reference_locate(en.e, ref, sheet_img.p, R"({"expectedCount":2,"maxSkewDeg":6})", &out), FDC_OK);
+    if (!out) return;
+    auto j = nlohmann::json::parse(std::string((const char*)fdc_buffer_data(out), fdc_buffer_size(out)));
+    fdc_buffer_free(out);
+    CHECK_EQ(j["labels"].size(), size_t(2));
+    std::vector<double> angles;
+    for (auto& l : j["labels"]) angles.push_back(l["angleDeg"].get<double>());
+    std::sort(angles.begin(), angles.end());
+    if (angles.size() == 2) {
+        CHECK_NEAR(angles[0], 3.0, 0.5);
+        CHECK_NEAR(angles[1], 183.0, 0.5);
+    }
+    CHECK_NEAR(j["sheetAngleDeg"].get<double>(), 3.0, 0.5);
+    fdc_reference_free(ref);
+}

@@ -38,6 +38,7 @@ public sealed unsafe class DocumentCompareEngine : IDisposable
         FontValidator = new FontValidator(this, pdf);
         Comparer = new Comparer(this);
         ResultExporter = new ResultExporter();
+        ImageProcessor = new ImageProcessor();
     }
 
     /// <summary>Bibliotekets version, t.ex. "0.3.0".</summary>
@@ -52,6 +53,7 @@ public sealed unsafe class DocumentCompareEngine : IDisposable
     public IFontValidator FontValidator { get; }
     public Comparer Comparer { get; }
     public IResultExporter ResultExporter { get; }
+    public IImageProcessor ImageProcessor { get; }
 
     internal IntPtr Handle => _h != IntPtr.Zero ? _h : throw new ObjectDisposedException(nameof(DocumentCompareEngine));
 

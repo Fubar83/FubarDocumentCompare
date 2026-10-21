@@ -223,6 +223,10 @@ internal static unsafe class Native
     [DllImport(Lib)] internal static extern Status fdc_image_get_info(IntPtr image, fdc_image_info* out_);
     [DllImport(Lib)] internal static extern Status fdc_image_encode(IntPtr image, int format, int quality, out IntPtr buffer);
     [DllImport(Lib)] internal static extern Status fdc_image_load(byte* path, double dpi_override, out IntPtr image);
+    [DllImport(Lib)] internal static extern Status fdc_image_create(int width, int height, int channels, byte* data, int stride, double dpi, out IntPtr image);
+    [DllImport(Lib)] internal static extern Status fdc_image_process(IntPtr image, byte* ops_json, out IntPtr result, out IntPtr info);
+    [DllImport(Lib)] internal static extern Status fdc_image_estimate_skew(IntPtr image, double max_degrees, out double angle, out double confidence);
+    [DllImport(Lib)] internal static extern Status fdc_reference_locate(IntPtr engine, IntPtr reference, IntPtr sheet, byte* options_json, out IntPtr json);
     [DllImport(Lib)] internal static extern void fdc_image_free(IntPtr image);
 
     /// <summary>Tar över en fdc_buffer: kopierar innehållet och frigör den.</summary>

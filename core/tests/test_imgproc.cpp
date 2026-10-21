@@ -288,3 +288,77 @@ TEST(measure_blobs_after_threshold) {
     draw_regions(vis, rs);
     CHECK(cv::norm(vis, img) > 0);
 }
+
+// ---------------------------------------------------------------- transformer och snedhet
+
+namespace {
+
+// Ett "dokument": rader av textliknande block och en ram, vit bakgrund.
+cv::Mat document(int w = 900, int h = 650) {
+    cv::Mat m(h, w, CV_8UC3, cv::Scalar::all(255));
+    cv::rectangle(m, cv::Rect(40, 40, w - 80, h - 80), cv::Scalar(30, 30, 30), 3);
+    cv::RNG rng(5);
+    for (int y = 90; y < h - 90; y += 34)
+        for (int x = 80; x < w - 160;) {
+            int len = 20 + rng.uniform(0, 70);
+            cv::rectangle(m, cv::Rect(x, y, len, 14), cv::Scalar(20, 20, 20), cv::FILLED);
+            x += len + 12;
+        }
+    return m;
+}
+
+}  // namespace
+
+TEST(imgproc_rotate_expand_and_quarter_turns) {
+    cv::Mat d = document(400, 200);
+    auto r = imgproc::rotate(d, 90);
+    CHECK_EQ(r.cols, 200);
+    CHECK_EQ(r.rows, 400);
+    auto back = imgproc::rotate90(r, -1);
+    CHECK_EQ(max_diff(back, d, cv::Mat()), 0.0);
+    auto r30 = imgproc::rotate(d, 30);
+    double a = 30 * CV_PI / 180;
+    CHECK_NEAR(r30.cols, std::ceil(400 * std::cos(a) + 200 * std::sin(a)), 1.0);
+    auto same = imgproc::rotate(d, 30, false);
+    CHECK(same.size() == d.size());
+    auto f = imgproc::flip(imgproc::flip(d, true, false), true, false);
+    CHECK_EQ(max_diff(f, d, cv::Mat()), 0.0);
+    auto s = imgproc::scale(d, 0.5, 0.25);
+    CHECK(s.cols == 200 && s.rows == 50);
+}
+
+TEST(imgproc_warp_quad_rectifies) {
+    cv::Mat d = document(400, 260);
+    // vrid 7° och läs tillbaka fyrhörningen som etiketten hamnade i
+    cv::Point2d c((d.cols - 1) / 2.0, (d.rows - 1) / 2.0);
+    cv::Mat m = cv::getRotationMatrix2D(c, 7, 1.0), rot;
+    cv::warpAffine(d, rot, m, d.size(), cv::INTER_CUBIC, cv::BORDER_CONSTANT, cv::Scalar::all(255));
+    auto map = [&](double x, double y) {
+        return cv::Point2d(m.at<double>(0, 0) * x + m.at<double>(0, 1) * y + m.at<double>(0, 2),
+                           m.at<double>(1, 0) * x + m.at<double>(1, 1) * y + m.at<double>(1, 2));
+    };
+    // en inre del (så att hörnen ligger i bilden)
+    std::array<cv::Point2d, 4> q{map(60, 50), map(339, 50), map(339, 209), map(60, 209)};
+    auto up = imgproc::warp_quad(rot, q, cv::Size(280, 160));
+    cv::Mat want = d(cv::Rect(60, 50, 280, 160));
+    cv::Mat diff;
+    cv::absdiff(up, want, diff);
+    CHECK(cv::mean(diff)[0] < 12);   // interpolation två gånger: små skillnader i kanterna
+}
+
+TEST(imgproc_skew_is_estimated_and_removed) {
+    cv::Mat d = document();
+    for (double deg : {3.2, -5.0, 0.0, 11.5, -0.6}) {
+        auto tilted = imgproc::rotate(d, deg);
+        auto s = imgproc::estimate_skew(tilted);
+        if (std::abs(s.angle_deg - deg) > 0.15)
+            pctest::fail(__FILE__, __LINE__, "vriden " + std::to_string(deg) + "°, skattad " + std::to_string(s.angle_deg) + "°");
+        CHECK(s.confidence > 0.5);
+        imgproc::Skew after;
+        auto straight = imgproc::deskew(tilted, 15, &after);
+        CHECK_NEAR(imgproc::estimate_skew(straight).angle_deg, 0.0, 0.15);
+    }
+    // utanför sökområdet: ingen topp inom ±2°
+    auto s = imgproc::estimate_skew(imgproc::rotate(d, 8), 2);
+    CHECK(std::abs(s.angle_deg) <= 2.0 + 1e-9);
+}

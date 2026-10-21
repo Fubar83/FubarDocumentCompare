@@ -58,7 +58,7 @@ internal static class Program
             }
             var frame = window.CaptureRenderedFrame();
             frame?.Save(Path.Combine(outDir, name));
-            Console.WriteLine($"{name}: {vm.Generator.Compare.Status}");
+            Console.WriteLine($"{name}: {vm.Generator.Compare.Status} / {vm.Lab.Status}");
         }
 
         // 1. Demoark: 3 × 2 etiketter, 4,5° sned, 101,5 % skala, veck, CIS-skanner, två fel
@@ -75,6 +75,24 @@ internal static class Program
         if (g.Compare.Findings.Count > 0) g.Compare.SelectedFinding = g.Compare.Findings[0];
         Shot(0, "1-demoark.png");
 
+        // Bildlabbet: demoarket, etiketterna hittade mot originalet, kanter bara på etiketterna
+        var lab = vm.Lab;
+        Wait(lab.UseDemoSheetCommand.ExecuteAsync(null));
+        Wait(lab.LocateAsync());
+        lab.ToAdd = ImageLabViewModel.Catalog.First(o => o.Title == "Kanter (Canny)");
+        lab.AddStepCommand.Execute(null);
+        lab.Steps[^1].OnlyLabels = true;
+        Wait(Task.Delay(2500));
+        Shot(2, "3-bildlabb-etiketter.png");
+        lab.ClearStepsCommand.Execute(null);
+        foreach (var title in new[] { "Räta upp (auto)", "Gråskala", "Adaptiv tröskel" })
+        {
+            lab.ToAdd = ImageLabViewModel.Catalog.First(o => o.Title == title);
+            lab.AddStepCommand.Execute(null);
+        }
+        Wait(Task.Delay(2500));
+        Shot(2, "4-bildlabb-uppratat.png");
+
         // 2. Egna filer: testdatans etikett, PDF mot PDF
         vm.OwnFiles.UseTestDataCommand.Execute(null);
         Wait(vm.OwnFiles.RunCommand.ExecuteAsync(null));
@@ -88,12 +106,12 @@ internal static class Program
             vm.Pdf.ShowBarcodes = true;
             Wait(vm.Pdf.OpenAsync(Path.Combine(root, "label", "smp.pdf")));
             Wait(Task.Delay(400));
-            Shot(2, "3-pdf.png");
+            Shot(3, "5-pdf.png");
             vm.Pdf.CutOut = true;
             vm.Pdf.ShowWords = false;
             vm.Pdf.HideNonPrinting = true;
             Wait(Task.Delay(800));
-            Shot(2, "4-pdf-utstansad.png");
+            Shot(3, "6-pdf-utstansad.png");
         }
         window.Close();
         return 0;

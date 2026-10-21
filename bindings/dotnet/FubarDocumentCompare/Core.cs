@@ -21,3 +21,6 @@ public sealed class EngineOptions
     /// </summary>
     public long CacheBytes { get; init; }
 }
+
+/// <summary>En punkt i bildens pixlar (eller mm, där det står).</summary>
+public readonly record struct PointD(double X, double Y);

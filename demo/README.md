@@ -35,6 +35,17 @@ hittas, och etiketterna färgas efter status (grön, gul, röd) när de analyser
 rader, kolumner eller antal etiketter, eller låta dem vara okända. Knappen "Testdata" väljer
 etiketten i `testdata/label`.
 
+**Bildlabb.** En kedja av filter och transformer med förhandsvisning direkt (lägg till, flytta, slå av
+steg och dra i parametrarna). Källan är senaste demoarket, en scan eller en PDF-sida.
+
+- **Uppskatta snedhet** visar vinkeln; steget "Räta upp (auto)" rätar upp.
+- **Hitta etiketter** letar mot originalet: hörn och vridning (även upp och ned). Filtersteg kan
+  begränsas till etiketterna ("Bara på etiketterna").
+- Etiketterna visas utsnidna och upprätade till höger.
+- Katalogen: gråskala, gamma, kontrast, CLAHE, oskärpa, median, bilateral, skärpa, egna matriser
+  (skärpa, relief, medel), Sobel, gradient, Canny, trösklar, morfologi, låg- och högpass (FFT),
+  rasterborttagning, vridning, 90°-steg, spegling och skala.
+
 **PDF.**
 
 - Sida, ruta (trim, media, crop, bleed, art) och upplösning.
@@ -55,5 +66,7 @@ Med argumentet körs demot utan fönster (Avalonia headless med Skia) och sparar
 
 ![Demoark](../docs/demo/1-demoark.png)
 ![Egna filer](../docs/demo/2-egna-filer.png)
-![PDF](../docs/demo/3-pdf.png)
-![PDF, utstansad](../docs/demo/4-pdf-utstansad.png)
+![Bildlabb: kanter bara på etiketterna](../docs/demo/3-bildlabb-etiketter.png)
+![Bildlabb: upprätat och tröskel](../docs/demo/4-bildlabb-uppratat.png)
+![PDF](../docs/demo/5-pdf.png)
+![PDF, utstansad](../docs/demo/6-pdf-utstansad.png)

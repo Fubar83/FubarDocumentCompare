@@ -433,6 +433,25 @@ typedef enum fdc_image_format { FDC_FORMAT_PNG = 0, FDC_FORMAT_JPEG = 1 } fdc_im
 FDC_API fdc_status fdc_image_encode(const fdc_image* img, fdc_image_format format, int quality, fdc_buffer** out);
 /* Läs en bild (TIFF, PNG, JPEG; 16 bit skalas till 8) som RGB. dpi ur filen, eller dpi_override > 0. */
 FDC_API fdc_status fdc_image_load(const char* path, double dpi_override, fdc_image** out);
+/* Bild ur egna pixlar (8 bit, 1/3/4 kanaler; stride 0 = tätt packad). Pixlarna kopieras. */
+FDC_API fdc_status fdc_image_create(int width, int height, int channels, const void* data, int stride, double dpi, fdc_image** out);
+
+/* Bildbehandling: en kedja operationer som JSON, t.ex.
+ *   [{"op": "deskew"}, {"op": "gaussian", "sigma": 2, "regions": [{"rect": [10, 10, 200, 80]}]}, {"op": "otsu"}]
+ * Filter (gray, invert, gamma, normalize, clahe, gaussian, box, median, bilateral, sharpen, sobel, laplacian,
+ * gradient, edges, threshold, otsu, adaptiveThreshold, morph, kernel, linear, lowpass, highpass, bandpass,
+ * bandstop, descreen) kan begränsas till områden (rect, polygon, circle). Geometri: rotate, rotate90, flip,
+ * scale, resize, crop, deskew, warpQuad, warpAffine. Resultatet är en ny bild (8 bit). info_out (valfri):
+ * JSON med det operationerna hittade, t.ex. deskews vinkel. */
+FDC_API fdc_status fdc_image_process(const fdc_image* img, const char* ops_json, fdc_image** out, fdc_buffer** info_out);
+/* Snedhet (moturs positiv, modulo 90°) ur kanternas riktningar; confidence 0..1. */
+FDC_API fdc_status fdc_image_estimate_skew(const fdc_image* img, double max_degrees, double* angle_deg, double* confidence);
+
+/* Etiketterna på ett ark utan jämförelse: läge, hörn, rotation (0–360°, även 90/180/270), rad och kolumn.
+ * options_json (valfri): {"rotations": [0, 90, 180, 270], "maxSkewDeg": 4, "expectedCount": 8}.
+ * JSON: {"sheetAngleDeg", "dpi", "labels": [{"index", "row", "col", "angleDeg", "score", "center", "corners"}]}. */
+FDC_API fdc_status fdc_reference_locate(fdc_engine* e, const fdc_reference* ref, const fdc_image* sheet, const char* options_json,
+                                        fdc_buffer** json_out);
 FDC_API void fdc_image_free(fdc_image* img);
 
 #ifdef __cplusplus
