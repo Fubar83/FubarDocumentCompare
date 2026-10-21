@@ -19,6 +19,7 @@ var examples = new Dictionary<string, (string Usage, Func<DocumentCompareEngine,
     ["compare"] = ("<original.pdf> <prov (pdf/tif/png)> <utkatalog>", (e, a) => Compare.Run(e, a[0], a[1], a[2])),
     ["documents"] = ("<manus.pdf> <bok.pdf>", (e, a) => Documents.Run(e, a[0], a[1])),
     ["data-check"] = ("<pdf> <förväntat.txt|csv|json>", (e, a) => DataCheck.Run(e, a[0], a[1])),
+    ["gallery"] = ("<pdf> <utkatalog> [dpi]", (e, a) => Gallery.Run(e, a[0], a[1], a.Length > 2 ? double.Parse(a[2]) : 200)),
     ["queue"] = ("<original.pdf> <prov> [<prov> …]", (e, a) => Queue.Run(e, a[0], a[1..])),
 };
 
@@ -54,6 +55,7 @@ if (args[0] == "all")
         ("compare", [Path.Combine(label, "ref.pdf"), Path.Combine(label, "smp.pdf"), Path.Combine(outDir, "jämförelse")]),
         ("documents", [Path.Combine(data, "book", "manuscript.pdf"), Path.Combine(data, "book", "book.pdf")]),
         ("data-check", [Path.Combine(label, "smp.pdf"), Path.Combine(label, "expected.txt")]),
+        ("gallery", [Path.Combine(label, "smp.pdf"), Path.Combine(outDir, "galleri")]),
         ("queue", [Path.Combine(label, "ref.pdf"), Path.Combine(label, "smp.pdf"), Path.Combine(label, "ref.pdf"), Path.Combine(label, "smp.pdf")]),
     };
     foreach (var (name, a) in runs)
