@@ -9,3 +9,5 @@ bench*.log
 doccases*/
 docmetrics*.json
 cases/
+# lokala verktygsinställningar
+.claude/
