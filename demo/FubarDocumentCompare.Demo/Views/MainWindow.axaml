@@ -1,0 +1,22 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:FubarDocumentCompare.Demo.ViewModels"
+        xmlns:v="using:FubarDocumentCompare.Demo.Views"
+        x:Class="FubarDocumentCompare.Demo.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="FubarDocumentCompare – demo" Width="1500" Height="950">
+  <DockPanel>
+    <TextBlock DockPanel.Dock="Bottom" Text="{Binding Version}" Classes="muted" Margin="10,4" FontSize="11" />
+    <TabControl Margin="6,0">
+      <TabItem Header="Demoark">
+        <v:GeneratorView DataContext="{Binding Generator}" />
+      </TabItem>
+      <TabItem Header="Egna filer">
+        <v:OwnFilesView DataContext="{Binding OwnFiles}" />
+      </TabItem>
+      <TabItem Header="PDF">
+        <v:PdfView DataContext="{Binding Pdf}" />
+      </TabItem>
+    </TabControl>
+  </DockPanel>
+</Window>

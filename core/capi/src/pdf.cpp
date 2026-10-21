@@ -229,3 +229,22 @@ FDC_API fdc_status fdc_font_validate(fdc_engine* e, const fdc_pdf* p, int page, 
 }
 
 }  // extern "C"
+
+extern "C" {
+
+FDC_API fdc_status fdc_image_load(const char* path, double dpi_override, fdc_image** out) {
+    return guard([&] {
+        if (!path || !out) return set_error(FDC_ERR_INVALID_ARGUMENT, "sökväg eller out saknas");
+        if (!std::filesystem::exists(std::filesystem::u8path(path))) return set_error(FDC_ERR_FILE_NOT_FOUND, std::string("filen finns inte: ") + path);
+        auto scan = image::read_scan(path, dpi_override);
+        pdf::Raster r;
+        r.pixels = scan.rgb;
+        r.geom.dpi = scan.dpi;
+        r.full_width = scan.rgb.cols;
+        r.full_height = scan.rgb.rows;
+        *out = new fdc_image{std::move(r)};
+        return FDC_OK;
+    });
+}
+
+}  // extern "C"

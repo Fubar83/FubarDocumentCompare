@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Demoapp (Avalonia, Windows/macOS/Linux): jämförelser med genererade ark (rotation, skala, veck,
+       flera etiketter, 180°-vända etiketter), egna filer, och PDF-vyn (lager, varianter, överlägg). -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <RootNamespace>FubarDocumentCompare.Demo</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <FdcNativeDir Condition="'$(FdcNativeDir)' == ''">$(MSBuildThisFileDirectory)..\..\core\build\windows\bin\</FdcNativeDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.2.3" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.2.3" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.3" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.3" />
+    <!-- Skärmbilder (argumentet screenshots): demot körs utan fönster och sparar en bild per flik -->
+    <PackageReference Include="Avalonia.Headless" Version="11.2.3" />
+    <PackageReference Include="Avalonia.Skia" Version="11.2.3" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\bindings\dotnet\FubarDocumentCompare\FubarDocumentCompare.csproj" />
+    <!-- testgeneratorn skapar demoark (finns bredvid den inbyggda DLL:en) -->
+    <None Include="$(FdcNativeDir)printcmp-testgen*" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+</Project>

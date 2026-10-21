@@ -11,6 +11,10 @@ public interface IImageCodec
 
     /// <summary>Pixlarna utan radutfyllnad (Width · kanaler byte per rad).</summary>
     byte[] CopyPixels(Image image);
+
+    /// <summary>Läser en bild (TIFF, PNG, JPEG; 16 bit skalas till 8) som RGB. Upplösningen tas ur filen, eller
+    /// <paramref name="dpiOverride"/> > 0 (krävs för filer utan upplösning).</summary>
+    Image Load(string path, double dpiOverride = 0);
 }
 
 public sealed class ImageCodec : IImageCodec
@@ -37,6 +41,14 @@ public sealed class ImageCodec : IImageCodec
         ArgumentNullException.ThrowIfNull(destination);
         var bytes = Encode(image, format, quality);
         await destination.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+    }
+
+    public unsafe Image Load(string path, double dpiOverride = 0)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        using var s = new Utf8Scope();
+        Native.Check(Native.fdc_image_load(s.Ptr(path), dpiOverride, out var p));
+        return Pdf.PdfResolver.TakeImage(p);
     }
 
     public unsafe byte[] CopyPixels(Image image)

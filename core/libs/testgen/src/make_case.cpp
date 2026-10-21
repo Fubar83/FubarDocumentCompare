@@ -246,6 +246,8 @@ json make_case(const CaseOptions& o, const fs::path& out_dir) {
 
     // ---- arkgeometri: rotation + skala + förskjutning ----
     double theta = rng.uniform(-D.rot, D.rot), scale = 1 + rng.uniform(-0.002, 0.002);
+    if (o.rotation_deg) theta = *o.rotation_deg;
+    if (o.scale) scale = *o.scale;
     double shx = rng.uniform(-2, 2) * ppm, shy = rng.uniform(-2, 2) * ppm;
     cv::Mat Gm = cv::getRotationMatrix2D(cv::Point2f(float(SW / 2.0), float(SH / 2.0)), theta, scale);
     cv::Matx23d G(Gm.at<double>(0, 0), Gm.at<double>(0, 1), Gm.at<double>(0, 2) + shx, Gm.at<double>(1, 0), Gm.at<double>(1, 1),

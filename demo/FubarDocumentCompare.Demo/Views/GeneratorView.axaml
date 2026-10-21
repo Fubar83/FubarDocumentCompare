@@ -1,0 +1,50 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FubarDocumentCompare.Demo.ViewModels"
+             xmlns:v="using:FubarDocumentCompare.Demo.Views"
+             x:Class="FubarDocumentCompare.Demo.Views.GeneratorView"
+             x:DataType="vm:GeneratorViewModel">
+  <!-- Ett simulerat tryckt och scannat ark med facit; jämförelsen startar direkt. -->
+  <Grid ColumnDefinitions="270,*" Margin="0,8,0,0">
+    <ScrollViewer>
+      <StackPanel Spacing="4" Margin="0,0,12,0">
+        <TextBlock Classes="h2" Text="Ark" Margin="0" />
+        <TextBlock Text="Mall" />
+        <ComboBox ItemsSource="{Binding Templates}" SelectedItem="{Binding Template}" HorizontalAlignment="Stretch" />
+        <Grid ColumnDefinitions="*,8,*">
+          <StackPanel>
+            <TextBlock Text="Rader" />
+            <NumericUpDown Value="{Binding Rows}" Minimum="1" Maximum="6" FormatString="0" />
+          </StackPanel>
+          <StackPanel Grid.Column="2">
+            <TextBlock Text="Kolumner" />
+            <NumericUpDown Value="{Binding Cols}" Minimum="1" Maximum="4" FormatString="0" />
+          </StackPanel>
+        </Grid>
+        <TextBlock Text="{Binding RotationDeg, StringFormat='Rotation (sned): {0:+0.0;-0.0}°'}" />
+        <Slider Minimum="-8" Maximum="8" Value="{Binding RotationDeg}" TickFrequency="0.5" IsSnapToTickEnabled="True" />
+        <TextBlock Text="{Binding ScalePercent, StringFormat='Skala: {0:0.0} %'}" />
+        <Slider Minimum="95" Maximum="105" Value="{Binding ScalePercent}" TickFrequency="0.5" IsSnapToTickEnabled="True" />
+        <TextBlock Text="Upplösning (dpi)" />
+        <ComboBox ItemsSource="{Binding Resolutions}" SelectedItem="{Binding Dpi}" HorizontalAlignment="Stretch" />
+        <TextBlock Text="{Binding FoldProbability, StringFormat='Veck (sannolikhet): {0:P0}'}" />
+        <Slider Minimum="0" Maximum="1" Value="{Binding FoldProbability}" TickFrequency="0.1" IsSnapToTickEnabled="True" />
+        <TextBlock Text="Skanner" />
+        <ComboBox ItemsSource="{Binding Scanners}" SelectedItem="{Binding Scanner}" HorizontalAlignment="Stretch" />
+        <TextBlock Text="Svårighet (raster, punktförstoring, passning, 180°-vända etiketter)" TextWrapping="Wrap" />
+        <ComboBox ItemsSource="{Binding Difficulties}" SelectedItem="{Binding Difficulty}" HorizontalAlignment="Stretch" />
+        <TextBlock Text="Fel i originalet (antal)" />
+        <NumericUpDown Value="{Binding Errors}" Minimum="0" Maximum="6" FormatString="0" />
+        <TextBlock Text="Frö" />
+        <Grid ColumnDefinitions="*,6,Auto">
+          <NumericUpDown Value="{Binding Seed}" Minimum="1" Maximum="999999" FormatString="0" />
+          <Button Grid.Column="2" Content="Nytt" Command="{Binding NewSeedCommand}" />
+        </Grid>
+        <Button Content="Skapa ark och jämför" Command="{Binding GenerateAndCompareCommand}" IsEnabled="{Binding !Busy}"
+                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,10,0,0" Classes="accent" />
+        <TextBlock Text="{Binding CaseInfo}" TextWrapping="Wrap" Classes="muted" FontSize="11" Margin="0,8,0,0" />
+      </StackPanel>
+    </ScrollViewer>
+    <v:CompareView Grid.Column="1" DataContext="{Binding Compare}" />
+  </Grid>
+</UserControl>

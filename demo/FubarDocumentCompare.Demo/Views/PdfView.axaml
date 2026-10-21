@@ -1,0 +1,66 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FubarDocumentCompare.Demo.ViewModels"
+             xmlns:c="using:FubarDocumentCompare.Demo.Controls"
+             x:Class="FubarDocumentCompare.Demo.Views.PdfView"
+             x:DataType="vm:PdfViewModel">
+  <Grid ColumnDefinitions="290,*" Margin="0,8,0,0">
+    <ScrollViewer>
+      <StackPanel Spacing="4" Margin="0,0,12,0">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <Button Content="Öppna PDF …" Click="Open" />
+          <Button Content="smp.pdf" Click="OpenSample" />
+          <Button Content="GWG-patch" Click="OpenGwg" ToolTip.Tip="ISO 19593-patch ur realworld-testet (om det har körts)" />
+        </StackPanel>
+        <ItemsControl ItemsSource="{Binding Facts}" FontSize="11" />
+        <TextBlock Classes="h2" Text="Sida och ruta" />
+        <Grid ColumnDefinitions="*,8,*">
+          <NumericUpDown Value="{Binding Page}" Minimum="1" Maximum="{Binding PageCount}" FormatString="0" />
+          <ComboBox Grid.Column="2" ItemsSource="{Binding Boxes}" SelectedItem="{Binding Box}" HorizontalAlignment="Stretch" />
+        </Grid>
+        <TextBlock Text="{Binding Dpi, StringFormat='Upplösning: {0:0} dpi'}" />
+        <Slider Minimum="36" Maximum="400" Value="{Binding Dpi}" TickFrequency="2" IsSnapToTickEnabled="True" />
+        <CheckBox Content="Bara tryck (utan stans, lack, punktskrift, ISO 19593-steg)" IsChecked="{Binding HideNonPrinting}" />
+        <CheckBox Content="Gråskala" IsChecked="{Binding Gray}" />
+        <CheckBox Content="Utstansad längs stanslinjen" IsChecked="{Binding CutOut}" />
+        <TextBlock Classes="h2" Text="Lager" />
+        <ItemsControl ItemsSource="{Binding Layers}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:Toggle">
+              <CheckBox IsChecked="{Binding IsOn}">
+                <StackPanel>
+                  <TextBlock Text="{Binding Name}" />
+                  <TextBlock Text="{Binding Detail}" Classes="muted" FontSize="11" />
+                </StackPanel>
+              </CheckBox>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Classes="h2" Text="Dekorfärger" />
+        <ItemsControl ItemsSource="{Binding Spots}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:Toggle">
+              <CheckBox IsChecked="{Binding IsOn}">
+                <TextBlock>
+                  <Run Text="{Binding Name}" />
+                  <Run Text="{Binding Detail, StringFormat=' ({0})'}" Foreground="Gray" />
+                </TextBlock>
+              </CheckBox>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Classes="h2" Text="Överlägg (bildkarta)" />
+        <CheckBox Content="Dekorfärgernas former och ISO 19593-steg" IsChecked="{Binding ShowSpots}" />
+        <CheckBox Content="Ord" IsChecked="{Binding ShowWords}" />
+        <CheckBox Content="Streckkoder" IsChecked="{Binding ShowBarcodes}" />
+        <CheckBox Content="Sidobjekt" IsChecked="{Binding ShowObjects}" />
+      </StackPanel>
+    </ScrollViewer>
+    <Grid Grid.Column="1" RowDefinitions="*,Auto">
+      <Border Background="#2a2a2e" CornerRadius="4">
+        <c:OverlayImage Source="{Binding Image}" Shapes="{Binding Shapes}" ClipPolygons="{Binding Clip}" />
+      </Border>
+      <TextBlock Grid.Row="1" Text="{Binding Status}" Classes="muted" Margin="0,4" />
+    </Grid>
+  </Grid>
+</UserControl>

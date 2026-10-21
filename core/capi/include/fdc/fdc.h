@@ -115,6 +115,8 @@ typedef struct fdc_reference_options {
     const char* exclude_spots;      /* dekorfärger att utesluta, t.ex. "White;Varnish*" */
     const char* tolerance_overrides_json;   /* avancerat: {"delta_e": 5} */
     const fdc_fontset* fonts;       /* typsnitt som inte är inbäddade (original och PDF-prov); NULL = systemets */
+    const char* masks_json;         /* ytor som inte jämförs (variabel data), JSON:
+                                       [{"reason": "variable", "rect_mm": [x, y, w, h]}], mm från trimrutans hörn */
 } fdc_reference_options;
 
 FDC_API void fdc_reference_options_init(fdc_reference_options* opt);
@@ -429,6 +431,8 @@ FDC_API fdc_status fdc_font_validate(fdc_engine* e, const fdc_pdf* p, int page, 
 typedef enum fdc_image_format { FDC_FORMAT_PNG = 0, FDC_FORMAT_JPEG = 1 } fdc_image_format;
 /* quality: JPEG 1–100, PNG 0–9 (komprimering); -1 = standard. */
 FDC_API fdc_status fdc_image_encode(const fdc_image* img, fdc_image_format format, int quality, fdc_buffer** out);
+/* Läs en bild (TIFF, PNG, JPEG; 16 bit skalas till 8) som RGB. dpi ur filen, eller dpi_override > 0. */
+FDC_API fdc_status fdc_image_load(const char* path, double dpi_override, fdc_image** out);
 FDC_API void fdc_image_free(fdc_image* img);
 
 #ifdef __cplusplus

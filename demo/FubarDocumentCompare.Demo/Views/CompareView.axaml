@@ -1,0 +1,61 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FubarDocumentCompare.Demo.ViewModels"
+             xmlns:c="using:FubarDocumentCompare.Demo.Controls"
+             x:Class="FubarDocumentCompare.Demo.Views.CompareView"
+             x:DataType="vm:CompareViewModel">
+  <!-- Arket med etiketter och veck till vänster; etiketter, fynd och utsnitt till höger. -->
+  <Grid ColumnDefinitions="*,6,460" RowDefinitions="Auto,*">
+    <StackPanel Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="12" Margin="0,0,0,6">
+      <ProgressBar Width="220" Value="{Binding Progress}" IsVisible="{Binding IsRunning}" />
+      <TextBlock Text="{Binding Stage}" VerticalAlignment="Center" IsVisible="{Binding IsRunning}" />
+      <TextBlock Text="{Binding Status}" VerticalAlignment="Center" FontWeight="SemiBold" />
+      <TextBlock Text="{Binding Summary}" VerticalAlignment="Center" />
+      <CheckBox Content="Visa facit (veck)" IsChecked="{Binding ShowTruth}" />
+    </StackPanel>
+    <Border Grid.Row="1" Background="#2a2a2e" CornerRadius="4">
+      <c:OverlayImage Source="{Binding Sheet}" Shapes="{Binding Shapes}" />
+    </Border>
+    <GridSplitter Grid.Row="1" Grid.Column="1" />
+    <Grid Grid.Row="1" Grid.Column="2" RowDefinitions="Auto,170,Auto,*,Auto,Auto,110">
+      <TextBlock Classes="h2" Text="Etiketter (rotation hittad / facit)" Margin="0,0,0,4" />
+      <ListBox Grid.Row="1" ItemsSource="{Binding Labels}">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:LabelRow">
+            <Grid ColumnDefinitions="36,92,50,68,68,36,*">
+              <TextBlock Text="{Binding Index, StringFormat='#{0}'}" FontWeight="SemiBold" />
+              <TextBlock Grid.Column="1" Text="{Binding Position}" />
+              <TextBlock Grid.Column="2" Text="{Binding Status}" Foreground="{Binding StatusBrush}" FontWeight="SemiBold" />
+              <TextBlock Grid.Column="3" Text="{Binding Rotation}" />
+              <TextBlock Grid.Column="4" Text="{Binding Expected}" Classes="muted" />
+              <TextBlock Grid.Column="5" Text="{Binding Folds, StringFormat='{}{0} v'}" />
+              <TextBlock Grid.Column="6" Text="{Binding Registration}" Classes="muted" />
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+      <TextBlock Grid.Row="2" Classes="h2" Text="Fynd" />
+      <ListBox Grid.Row="3" ItemsSource="{Binding Findings}" SelectedItem="{Binding SelectedFinding}">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:FindingRow">
+            <StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="{Binding Severity}" Foreground="{Binding SeverityBrush}" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding Title}" />
+                <TextBlock Text="{Binding Where}" Classes="muted" />
+              </StackPanel>
+              <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding Reasons}" TextWrapping="Wrap" Classes="muted" FontSize="11" />
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+      <TextBlock Grid.Row="4" Classes="h2" Text="Utsnitt: original · prov" />
+      <Grid Grid.Row="5" ColumnDefinitions="*,6,*" Height="170">
+        <Border Background="#eee"><Image Source="{Binding ReferenceCrop}" Stretch="Uniform" /></Border>
+        <Border Grid.Column="2" Background="#eee"><Image Source="{Binding SampleCrop}" Stretch="Uniform" /></Border>
+      </Grid>
+      <ListBox Grid.Row="6" ItemsSource="{Binding Log}" FontSize="11" Margin="0,6,0,0" />
+    </Grid>
+  </Grid>
+</UserControl>

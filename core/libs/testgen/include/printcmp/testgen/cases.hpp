@@ -32,6 +32,8 @@ struct CaseOptions {
     int dpi = 600;
     std::string scanner = "legacy";      // legacy | cis | ccd
     std::optional<double> fold_lift, fold_p;
+    std::optional<double> rotation_deg;   // arkets rotation; annars slumpad inom svårighetens gräns
+    std::optional<double> scale;          // arkets skala (1 = 100 %); annars nära 1
 };
 json make_case(const CaseOptions& o, const std::filesystem::path& out_dir);
 

@@ -2,7 +2,7 @@
 //
 //   printcmp-testgen labels --out cases --n 6 --seed 300 [--difficulty easy|normal|hard] [--template NAMN]
 //                    [--rows 4 --cols 2] [--mutations a,b] [--n-artwork N] [--scanner legacy|cis|ccd]
-//                    [--fold-lift MM] [--fold-p P]
+//                    [--fold-lift MM] [--fold-p P] [--rotation GRADER] [--scale S] [--dpi DPI]
 //   printcmp-testgen docs --out doccases [--books 3] [--labels 8] [--clean 0] [--seed 700]
 //   printcmp-testgen pdf TEMPLATE ut.pdf                 (en etikettmall som PDF)
 #include "../common/args.hpp"
@@ -32,6 +32,9 @@ int labels(const app::Args& a) {
         o.scanner = a.opt("--scanner", "legacy");
         if (a.has("--fold-lift")) o.fold_lift = std::stod(a.opt("--fold-lift"));
         if (a.has("--fold-p")) o.fold_p = std::stod(a.opt("--fold-p"));
+        if (a.has("--rotation")) o.rotation_deg = std::stod(a.opt("--rotation"));
+        if (a.has("--scale")) o.scale = std::stod(a.opt("--scale"));
+        if (a.has("--dpi")) o.dpi = std::stoi(a.opt("--dpi"));
         char name[32];
         std::snprintf(name, sizeof name, "case_%05llu", (unsigned long long)o.seed);
         auto t = testgen::make_case(o, out / name);

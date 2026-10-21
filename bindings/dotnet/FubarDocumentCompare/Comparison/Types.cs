@@ -56,6 +56,8 @@ public sealed class ReferenceOptions
     public string? ToleranceOverridesJson { get; init; }
     /// <summary>Typsnitt för de som inte är inbäddade (originalet och PDF-prov); null = operativsystemets.</summary>
     public FubarDocumentCompare.Fonts.FontSet? Fonts { get; init; }
+    /// <summary>Ytor som inte jämförs, t.ex. variabel data (lot, datum) som skiljer mellan etiketterna.</summary>
+    public IReadOnlyList<CompareMask>? Masks { get; init; }
 }
 
 public sealed class CompareOptions
@@ -161,3 +163,13 @@ public sealed record DataItem
 public sealed record LayerInfo(string Name, bool DefaultOn);
 
 public sealed record BarcodeInfo(string Symbology, string Data);
+
+/// <summary>En yta i originalet som inte jämförs, i mm från trimrutans övre vänstra hörn.</summary>
+public sealed record CompareMask(double XMm, double YMm, double WidthMm, double HeightMm, string Reason = "variable");
+
+internal sealed record MaskJson(
+    [property: System.Text.Json.Serialization.JsonPropertyName("reason")] string Reason,
+    [property: System.Text.Json.Serialization.JsonPropertyName("rect_mm")] double[] RectMm);
+
+[System.Text.Json.Serialization.JsonSerializable(typeof(MaskJson[]))]
+internal sealed partial class MaskJsonContext : System.Text.Json.Serialization.JsonSerializerContext;

@@ -36,9 +36,7 @@ namespace {
 fdc_status open_reference(fdc_engine* e, const pdf::Bytes& bytes, const std::string& path, const fdc_reference_options* opt,
                          fdc_reference** out) {
     if (!e || !out) return set_error(FDC_ERR_INVALID_ARGUMENT, "motor eller out saknas");
-    fdc_reference_options d;
-    fdc_reference_options_init(&d);
-    const fdc_reference_options& o = opt ? *opt : d;
+    const fdc_reference_options o = read_options(opt, fdc_reference_options_init);   // äldre anropare: kortare struct
     compare::ReferenceOptions ro;
     ro.page = o.page > 0 ? o.page : 1;
     ro.box = o.box ? o.box : "trim";
@@ -48,7 +46,12 @@ fdc_status open_reference(fdc_engine* e, const pdf::Bytes& bytes, const std::str
     ro.exclude_layers = split_list(o.exclude_layers);
     ro.exclude_spots = split_list(o.exclude_spots);
     if (o.tolerance_overrides_json && *o.tolerance_overrides_json) ro.tolerance_overrides = json::parse(o.tolerance_overrides_json);
-    if (o.size >= offsetof(fdc_reference_options, fonts) + sizeof(o.fonts) && o.fonts) ro.fonts = o.fonts->set;
+    if (o.fonts) ro.fonts = o.fonts->set;
+    if (o.masks_json && *o.masks_json)
+        for (auto& m : json::parse(o.masks_json)) {
+            auto r = m.at("rect_mm");
+            ro.masks.push_back({m.value("reason", "user"), r.at(0).get<double>(), r.at(1).get<double>(), r.at(2).get<double>(), r.at(3).get<double>()});
+        }
     auto r = new fdc_reference();
     try {
         r->model = compare::analyse_reference(bytes, path, ro);

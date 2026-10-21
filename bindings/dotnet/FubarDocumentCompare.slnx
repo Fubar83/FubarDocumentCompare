@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="../../examples/dotnet/FubarDocumentCompare.Examples.csproj" />
+  <Project Path="../../demo/FubarDocumentCompare.Demo/FubarDocumentCompare.Demo.csproj" />
   <Project Path="FubarDocumentCompare.Tests/FubarDocumentCompare.Tests.csproj" />
   <Project Path="FubarDocumentCompare/FubarDocumentCompare.csproj" />
 </Solution>

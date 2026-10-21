@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FubarDocumentCompare.Demo.ViewModels"
+             xmlns:v="using:FubarDocumentCompare.Demo.Views"
+             x:Class="FubarDocumentCompare.Demo.Views.OwnFilesView"
+             x:DataType="vm:OwnFilesViewModel">
+  <Grid ColumnDefinitions="270,*" Margin="0,8,0,0">
+    <StackPanel Spacing="4" Margin="0,0,12,0">
+      <TextBlock Classes="h2" Text="Original (PDF)" Margin="0" />
+      <TextBox Text="{Binding ReferencePath}" Watermark="original.pdf" />
+      <Button Content="Välj original …" Click="PickReference" />
+      <TextBlock Classes="h2" Text="Prov (scan eller PDF)" />
+      <TextBox Text="{Binding SamplePath}" Watermark="ark.tif" />
+      <Button Content="Välj prov …" Click="PickSample" />
+      <Button Content="Testdata (etikett, PDF mot PDF)" Command="{Binding UseTestDataCommand}" />
+      <TextBlock Classes="h2" Text="Etiketter på arket" />
+      <Grid ColumnDefinitions="*,8,*">
+        <StackPanel>
+          <TextBlock Text="Rader (0 = okänt)" />
+          <NumericUpDown Value="{Binding Rows}" Minimum="0" Maximum="10" FormatString="0" />
+        </StackPanel>
+        <StackPanel Grid.Column="2">
+          <TextBlock Text="Kolumner" />
+          <NumericUpDown Value="{Binding Cols}" Minimum="0" Maximum="10" FormatString="0" />
+        </StackPanel>
+      </Grid>
+      <TextBlock Text="Antal etiketter (0 = okänt)" />
+      <NumericUpDown Value="{Binding ExpectedLabels}" Minimum="0" Maximum="60" FormatString="0" />
+      <CheckBox Content="Flera etiketter på arket" IsChecked="{Binding Multi}" />
+      <CheckBox Content="Jämför textlagret (PDF-prov)" IsChecked="{Binding TextCompare}" />
+      <Button Content="Jämför" Command="{Binding RunCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+              Margin="0,10,0,0" Classes="accent" />
+    </StackPanel>
+    <v:CompareView Grid.Column="1" DataContext="{Binding Compare}" />
+  </Grid>
+</UserControl>

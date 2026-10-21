@@ -8,6 +8,7 @@ textlager eller avkodas (streckkoder).
 core/              C++20-kärnan: lagrade bibliotek, C-API (FubarDocumentCompare.Native.dll) och printcmp-cli
 bindings/dotnet/   .NET-biblioteket FubarDocumentCompare med xUnit-tester; FubarDocumentCompare.slnx bygger allt i .NET
 examples/dotnet/   körbara C#-exempel på vanliga uppgifter (examples/dotnet/README.md)
+demo/              demoapp i Avalonia (Windows/macOS/Linux): jämförelser, demoark, PDF-vyn (demo/README.md)
 testdata/          små genererade fall med facit, för testerna
 docs/              algoritmer, testmaterial och mätningar (docs/algoritmer.md)
 ```

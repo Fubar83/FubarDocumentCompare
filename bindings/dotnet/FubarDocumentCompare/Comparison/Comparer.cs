@@ -54,6 +54,9 @@ public sealed unsafe partial class Comparer
         n.exclude_layers = s.Add(Join(o.ExcludeLayers));
         n.exclude_spots = s.Add(Join(o.ExcludeSpots));
         n.tolerance_overrides_json = s.Add(o.ToleranceOverridesJson);
+        if (o.Masks is { Count: > 0 } masks)
+            n.masks_json = s.Add(System.Text.Json.JsonSerializer.Serialize(masks.Select(m => new MaskJson(m.Reason, [m.XMm, m.YMm, m.WidthMm, m.HeightMm])).ToArray(),
+                                                                          MaskJsonContext.Default.MaskJsonArray));
         return n;
     }
 

@@ -23,6 +23,7 @@ internal static unsafe class Native
         public int profile;
         public IntPtr include_layers, exclude_layers, exclude_spots, tolerance_overrides_json;
         public IntPtr fonts;
+        public IntPtr masks_json;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -221,6 +222,7 @@ internal static unsafe class Native
 
     [DllImport(Lib)] internal static extern Status fdc_image_get_info(IntPtr image, fdc_image_info* out_);
     [DllImport(Lib)] internal static extern Status fdc_image_encode(IntPtr image, int format, int quality, out IntPtr buffer);
+    [DllImport(Lib)] internal static extern Status fdc_image_load(byte* path, double dpi_override, out IntPtr image);
     [DllImport(Lib)] internal static extern void fdc_image_free(IntPtr image);
 
     /// <summary>Tar över en fdc_buffer: kopierar innehållet och frigör den.</summary>
