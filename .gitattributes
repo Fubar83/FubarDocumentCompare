@@ -1,0 +1,8 @@
+# Binära filer: aldrig radslutsomvandling (en PDF i ren ASCII skulle annars få fel byteförskjutningar)
+*.pdf  binary
+*.tif  binary
+*.tiff binary
+*.png  binary
+*.jpg  binary
+*.ttf  binary
+*.otf  binary
