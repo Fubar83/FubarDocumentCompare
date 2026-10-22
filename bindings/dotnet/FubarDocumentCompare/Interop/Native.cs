@@ -228,6 +228,11 @@ internal static unsafe class Native
     [DllImport(Lib)] internal static extern Status fdc_image_estimate_skew(IntPtr image, double max_degrees, out double angle, out double confidence);
     [DllImport(Lib)] internal static extern Status fdc_reference_locate(IntPtr engine, IntPtr reference, IntPtr sheet, byte* options_json, out IntPtr json);
     [DllImport(Lib)] internal static extern void fdc_image_free(IntPtr image);
+    [DllImport(Lib)] internal static extern Status fdc_sheet_detect_labels(IntPtr sheet, byte* options_json, out IntPtr json);
+    [DllImport(Lib)] internal static extern Status fdc_sheet_compare_peers(IntPtr engine, IntPtr sheet, byte* options_json, out IntPtr peers);
+    [DllImport(Lib)] internal static extern Status fdc_peers_json(IntPtr peers, out IntPtr json);
+    [DllImport(Lib)] internal static extern Status fdc_peers_image(IntPtr peers, int label, out IntPtr image);
+    [DllImport(Lib)] internal static extern void fdc_peers_free(IntPtr peers);
 
     /// <summary>Tar över en fdc_buffer: kopierar innehållet och frigör den.</summary>
     internal static byte[] TakeBuffer(IntPtr b)

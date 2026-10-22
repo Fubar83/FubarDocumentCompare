@@ -13,7 +13,10 @@ public sealed class MainViewModel
         OwnFiles = new(engine);
         Pdf = new(engine);
         Lab = new(engine, Generator);
+        Peers = new(engine, Generator);
     }
+
+    public PeersViewModel Peers { get; }
 
     public GeneratorViewModel Generator { get; }
     public OwnFilesViewModel OwnFiles { get; }

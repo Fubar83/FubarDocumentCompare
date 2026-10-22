@@ -58,7 +58,7 @@ internal static class Program
             }
             var frame = window.CaptureRenderedFrame();
             frame?.Save(Path.Combine(outDir, name));
-            Console.WriteLine($"{name}: {vm.Generator.Compare.Status} / {vm.Lab.Status}");
+            Console.WriteLine($"{name}: {vm.Generator.Compare.Status} / {vm.Peers.Status} / {vm.Lab.Status}");
         }
 
         // 1. Demoark: 3 × 2 etiketter, 4,5° sned, 101,5 % skala, veck, CIS-skanner, två fel
@@ -83,7 +83,7 @@ internal static class Program
         lab.AddStepCommand.Execute(null);
         lab.Steps[^1].OnlyLabels = true;
         Wait(Task.Delay(2500));
-        Shot(2, "3-bildlabb-etiketter.png");
+        Shot(3, "4-bildlabb-etiketter.png");
         lab.ClearStepsCommand.Execute(null);
         foreach (var title in new[] { "Räta upp (auto)", "Gråskala", "Adaptiv tröskel" })
         {
@@ -91,7 +91,7 @@ internal static class Program
             lab.AddStepCommand.Execute(null);
         }
         Wait(Task.Delay(2500));
-        Shot(2, "4-bildlabb-uppratat.png");
+        Shot(3, "5-bildlabb-uppratat.png");
 
         // 2. Egna filer: testdatans etikett, PDF mot PDF
         vm.OwnFiles.UseTestDataCommand.Execute(null);
@@ -99,19 +99,27 @@ internal static class Program
         if (vm.OwnFiles.Compare.Findings.Count > 0) vm.OwnFiles.Compare.SelectedFinding = vm.OwnFiles.Compare.Findings[0];
         Shot(1, "2-egna-filer.png");
 
-        // 3. PDF-vyn: smp.pdf med former, ord och streckkoder, utstansad
+        // 3. Mot varandra: ett nytt ark (samma inställningar, 400 dpi) med tryckfel på enskilda etiketter, utan original
+        var peers = vm.Peers;
+        peers.PrintErrors = 3;
+        g.Seed = 21;
+        Wait(peers.NewDemoSheetCommand.ExecuteAsync(null));
+        if (peers.Findings.Count > 0) peers.SelectedFinding = peers.Findings[0];
+        Shot(2, "3-mot-varandra.png");
+
+        // 4. PDF-vyn: smp.pdf med former, ord och streckkoder, utstansad
         if (OwnFilesViewModel.FindTestData() is { } root)
         {
             vm.Pdf.ShowWords = true;
             vm.Pdf.ShowBarcodes = true;
             Wait(vm.Pdf.OpenAsync(Path.Combine(root, "label", "smp.pdf")));
             Wait(Task.Delay(400));
-            Shot(3, "5-pdf.png");
+            Shot(4, "6-pdf.png");
             vm.Pdf.CutOut = true;
             vm.Pdf.ShowWords = false;
             vm.Pdf.HideNonPrinting = true;
             Wait(Task.Delay(800));
-            Shot(3, "6-pdf-utstansad.png");
+            Shot(4, "7-pdf-utstansad.png");
         }
         window.Close();
         return 0;

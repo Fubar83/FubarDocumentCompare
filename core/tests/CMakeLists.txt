@@ -14,6 +14,13 @@ add_executable(printcmp_smoke_tests test_main.cpp test_smoke.cpp)
 target_link_libraries(printcmp_smoke_tests PRIVATE pc_testgen pc_jobspec pc_eval pc_compare pc_braille pc_image opencv_imgproc)
 add_test(NAME smoke COMMAND printcmp_smoke_tests)
 
+# Etiketterna jämförda med varandra utan original
+add_executable(printcmp_peers_tests test_main.cpp test_peers.cpp)
+target_link_libraries(printcmp_peers_tests PRIVATE pc_testgen pc_compare pc_image)
+add_test(NAME peers COMMAND printcmp_peers_tests)
+add_executable(probe_peers probe_peers.cpp)
+target_link_libraries(probe_peers PRIVATE pc_compare pc_image opencv_imgproc)
+
 add_executable(probe_barcode probe_barcode.cpp)
 target_link_libraries(probe_barcode PRIVATE pc_compare)
 add_executable(probe_label probe_label.cpp)

@@ -21,6 +21,7 @@ var examples = new Dictionary<string, (string Usage, Func<DocumentCompareEngine,
     ["data-check"] = ("<pdf> <förväntat.txt|csv|json>", (e, a) => DataCheck.Run(e, a[0], a[1])),
     ["gallery"] = ("<pdf> <utkatalog> [dpi]", (e, a) => Gallery.Run(e, a[0], a[1], a.Length > 2 ? double.Parse(a[2]) : 200)),
     ["queue"] = ("<original.pdf> <prov> [<prov> …]", (e, a) => Queue.Run(e, a[0], a[1..])),
+    ["peers"] = ("<ark (tif/png)> <utkatalog>", (e, a) => Peers.Run(e, a[0], a[1])),
 };
 
 if (args.Length == 0 || (args[0] != "all" && !examples.ContainsKey(args[0])))
@@ -42,6 +43,7 @@ if (args[0] == "all")
     var fontDir = Path.Combine(outDir, "kundfonter", "acme");
     Directory.CreateDirectory(fontDir);
     File.Copy(TestData.Font("DejaVuSans.ttf"), Path.Combine(fontDir, "AcmeSans-Regular.ttf"));
+    var peerSheet = await Peers.MakeSheet(engine, Path.Combine(label, "ref.pdf"), Path.Combine(outDir, "ark.png"));
     var runs = new (string Name, string[] Args)[]
     {
         ("metadata", [Path.Combine(label, "ref.pdf")]),
@@ -57,6 +59,7 @@ if (args[0] == "all")
         ("data-check", [Path.Combine(label, "smp.pdf"), Path.Combine(label, "expected.txt")]),
         ("gallery", [Path.Combine(label, "smp.pdf"), Path.Combine(outDir, "galleri")]),
         ("queue", [Path.Combine(label, "ref.pdf"), Path.Combine(label, "smp.pdf"), Path.Combine(label, "ref.pdf"), Path.Combine(label, "smp.pdf")]),
+        ("peers", [peerSheet, Path.Combine(outDir, "mot-varandra")]),
     };
     foreach (var (name, a) in runs)
     {

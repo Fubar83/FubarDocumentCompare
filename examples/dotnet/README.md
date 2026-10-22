@@ -28,6 +28,7 @@ dotnet run --project examples/dotnet -- render testdata/label/ref.pdf ref.png 30
 | Förväntade uppgifter i en PDF | `data-check` | `CompareExamples.cs` |
 | Jämförelser i bakgrunden: kö, arbetare, förlopp, avbrott | `queue` | `CompareExamples.cs` |
 | Galleri: rutor, bara tryck, stanslinje, lackmask, utstansad (genomskinlig utanför stanslinjen), beskuren, annoterad, ett lager i taget | `gallery` | `GalleryExample.cs` |
+| Etiketterna på ett scannat ark jämförda med varandra, utan original (konsensus, inpassade bilder) | `peers` | `PeerExample.cs` |
 
 ## Mönster
 

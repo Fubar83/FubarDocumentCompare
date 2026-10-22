@@ -86,6 +86,50 @@ public sealed unsafe partial class Comparer
                ?? throw new DocumentCompareException(Status.Internal, "tomt svar från lokaliseringen");
     }
 
+    /// <summary>
+    /// Etiketterna på ett scannat ark jämförda med varandra, utan original: de hittas mot bakgrunden, den mest
+    /// typiska blir förlaga och var och en jämförs med medianen av alla (konsensus). Fel som bara finns på en
+    /// etikett syns; fel som finns på alla kräver ett original (<see cref="StartCompare"/>).
+    /// </summary>
+    public PeerComparison CompareLabelsOnSheet(Imaging.Image sheet, PeerOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(sheet);
+        var o = options ?? new PeerOptions();
+        using var lease = new HandleLease(sheet.Handle);
+        using var s = new Utf8Scope();
+        Native.Check(Native.fdc_sheet_compare_peers(Handle, lease.Pointer, s.Ptr(o.ToJson()), out var peers));
+        try
+        {
+            Native.Check(Native.fdc_peers_json(peers, out var buffer));
+            var result = System.Text.Json.JsonSerializer.Deserialize(Native.TakeBuffer(buffer), PeerJsonContext.Default.PeerComparison)
+                         ?? throw new DocumentCompareException(Status.Internal, "tomt svar från jämförelsen");
+            if (!o.IncludeImages || result.Labels.Count == 0) return result;
+            Imaging.Image Take(int label)
+            {
+                Native.Check(Native.fdc_peers_image(peers, label, out var img));
+                return Pdf.PdfResolver.TakeImage(img);
+            }
+            return result with { Consensus = Take(-1), Aligned = [.. Enumerable.Range(0, result.Labels.Count).Select(Take)] };
+        }
+        finally
+        {
+            Native.fdc_peers_free(peers);
+        }
+    }
+
+    public Task<PeerComparison> CompareLabelsOnSheetAsync(Imaging.Image sheet, PeerOptions? options = null, CancellationToken ct = default) =>
+        Task.Run(() => CompareLabelsOnSheet(sheet, options), ct);
+
+    /// <summary>Bara detekteringen av etiketterna (utan original): hörn och snedhet, utan inbördes ordning.</summary>
+    public IReadOnlyList<DetectedLabel> DetectLabels(Imaging.Image sheet, PeerOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(sheet);
+        using var lease = new HandleLease(sheet.Handle);
+        using var s = new Utf8Scope();
+        Native.Check(Native.fdc_sheet_detect_labels(lease.Pointer, s.Ptr((options ?? new PeerOptions()).ToJson()), out var buffer));
+        return System.Text.Json.JsonSerializer.Deserialize(Native.TakeBuffer(buffer), PeerJsonContext.Default.DetectedSheet)?.Labels ?? [];
+    }
+
     public Job StartCompare(Reference reference, Sample sample, CompareOptions? options = null)
     {
         using var s = new Utf8Scope();

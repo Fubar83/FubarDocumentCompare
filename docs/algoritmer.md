@@ -14,6 +14,7 @@ tabellerna nedan mättes med prototypen; C++-kärnan ger samma fynd på samma ma
 | Hitta etiketter, passning, normalisering | `scan/locate.cpp`, `scan/register.cpp`, `scan/normalize.cpp` |
 | Diff, veck, klassning, säkerhetsgrad | `scan/diff.cpp`, `scan/folds.cpp`, `scan/sheet_folds.cpp`, `scan/classify.cpp`, `scan/certainty.cpp`, `scan/aggregate.cpp` |
 | Referensen och etikett/ark-jobbet | `compare/reference.cpp`, `compare/label.cpp`, `compare/label_steps.cpp`, `compare/textdiff.cpp` |
+| Etiketterna mot varandra (utan original): detektering, mall, konsensus | `compare/peers.cpp` |
 | Textlager, dokumentjämförelse, datakontroll | `doc/doctext.cpp`, `compare/doccompare.cpp`, `compare/datacheck.cpp` |
 | Streckkoder | `barcode/barcode.cpp` (zxing-cpp) |
 | Rapporter | `report/report.cpp`, `report/docreport.cpp` |

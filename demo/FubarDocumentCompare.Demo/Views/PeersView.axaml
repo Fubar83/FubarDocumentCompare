@@ -1,0 +1,71 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FubarDocumentCompare.Demo.ViewModels"
+             xmlns:c="using:FubarDocumentCompare.Demo.Controls"
+             x:Class="FubarDocumentCompare.Demo.Views.PeersView"
+             x:DataType="vm:PeersViewModel">
+  <!-- Källa och etiketterna till vänster, arket i mitten, vald etikett mot konsensus till höger. -->
+  <Grid ColumnDefinitions="300,*,420" Margin="0,8,0,0">
+    <Grid RowDefinitions="Auto,*" Margin="0,0,12,0">
+      <StackPanel Spacing="4">
+        <TextBlock Classes="h2" Text="Ark utan original" Margin="0" />
+        <TextBlock TextWrapping="Wrap" Classes="muted" FontSize="12"
+                   Text="Etiketterna jämförs med varandra: fel på en etikett syns, fel som finns på alla kräver ett original." />
+        <WrapPanel Margin="0,4,0,0">
+          <Button Content="Nytt demoark" Command="{Binding NewDemoSheetCommand}" IsEnabled="{Binding !Busy}" Margin="0,0,6,6"
+                  ToolTip.Tip="Med inställningarna under Demoark, utan fel i originalet men med tryckfel på enskilda etiketter" />
+          <Button Content="Senaste demoarket" Command="{Binding UseDemoSheetCommand}" IsEnabled="{Binding !Busy}" Margin="0,0,6,6" />
+          <Button Content="Scan …" Click="OpenScan" IsEnabled="{Binding !Busy}" Margin="0,0,6,6" />
+        </WrapPanel>
+        <Grid ColumnDefinitions="*,110" RowDefinitions="Auto,Auto">
+          <TextBlock Text="Tryckfel (demoark)" VerticalAlignment="Center" />
+          <NumericUpDown Grid.Column="1" Value="{Binding PrintErrors}" Minimum="0" Maximum="8" FormatString="0" />
+          <TextBlock Grid.Row="1" Text="Antal etiketter (0 = okänt)" VerticalAlignment="Center" />
+          <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding ExpectedCount}" Minimum="0" Maximum="200" FormatString="0" Margin="0,4,0,0" />
+        </Grid>
+        <CheckBox Content="Lokal passning (veck, buktning)" IsChecked="{Binding LocalRegistration}" />
+        <Button Content="Jämför igen" Command="{Binding CompareCommand}" IsEnabled="{Binding !Busy}" />
+        <TextBlock Text="{Binding SourceInfo}" TextWrapping="Wrap" Classes="muted" FontSize="11" />
+        <TextBlock Text="{Binding TruthInfo}" TextWrapping="Wrap" FontSize="11" />
+        <TextBlock Classes="h2" Text="Etiketterna" />
+      </StackPanel>
+      <ListBox Grid.Row="1" ItemsSource="{Binding Labels}" SelectedItem="{Binding SelectedLabel}">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:PeerRow">
+            <Grid ColumnDefinitions="6,*">
+              <Border Background="{Binding Status}" CornerRadius="2" />
+              <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding Detail}" FontSize="11" Classes="muted" TextWrapping="Wrap" />
+              </StackPanel>
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Grid>
+    <Grid Grid.Column="1" RowDefinitions="*,Auto">
+      <Border Background="#2a2a2e" CornerRadius="4">
+        <c:OverlayImage Source="{Binding SheetBitmap}" Shapes="{Binding SheetShapes}" />
+      </Border>
+      <TextBlock Grid.Row="1" Text="{Binding Status}" Margin="0,4" TextWrapping="Wrap" />
+    </Grid>
+    <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto,*,Auto,140" Margin="8,0,0,0">
+      <TextBlock Classes="h2" Margin="0" Text="{Binding SelectedLabel.Title, FallbackValue='Etiketten', StringFormat='Etiketten {0}'}" />
+      <Border Grid.Row="1" Background="#2a2a2e" CornerRadius="4">
+        <c:OverlayImage Source="{Binding SelectedLabel.Aligned}" Shapes="{Binding LabelShapes}" />
+      </Border>
+      <TextBlock Grid.Row="2" Classes="h2" Text="Konsensus (medianen av alla)" />
+      <Border Grid.Row="3" Background="#2a2a2e" CornerRadius="4">
+        <c:OverlayImage Source="{Binding Consensus}" Shapes="{Binding ConsensusShapes}" />
+      </Border>
+      <TextBlock Grid.Row="4" Classes="h2" Text="Avvikelser" />
+      <ListBox Grid.Row="5" ItemsSource="{Binding Findings}" SelectedItem="{Binding SelectedFinding}">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:PeerFindingRow">
+            <TextBlock Text="{Binding Title}" FontSize="12" />
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Grid>
+  </Grid>
+</UserControl>

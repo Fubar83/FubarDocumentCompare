@@ -454,6 +454,26 @@ FDC_API fdc_status fdc_reference_locate(fdc_engine* e, const fdc_reference* ref,
                                         fdc_buffer** json_out);
 FDC_API void fdc_image_free(fdc_image* img);
 
+/* ------------------------------------------------------------------ etiketterna mot varandra (utan original)
+ * Etiketterna på ett scannat ark hittas mot bakgrunden, den mest typiska blir förlaga, de andra passas in
+ * mot den och var och en jämförs med medianen av alla (konsensus). Fel som bara finns på en etikett syns;
+ * fel som finns på alla (systematiska) kräver ett original. Med två etiketter går en skillnad inte att
+ * tillskriva den ena; med en finns inget att jämföra.
+ * options_json (valfri): {"expectedCount": 8, "minLabelMm2": 300, "profile": "label_standard" eller fdc_profile,
+ * "toleranceOverrides": {...}, "localRegistration": true, "seed": 1}. */
+typedef struct fdc_peers fdc_peers;
+/* Bara detekteringen. JSON: {"dpi", "labels": [{"angleDeg" (snedhet −45..45), "corners": [{x, y} ×4]}]}. */
+FDC_API fdc_status fdc_sheet_detect_labels(const fdc_image* sheet, const char* options_json, fdc_buffer** json_out);
+FDC_API fdc_status fdc_sheet_compare_peers(fdc_engine* e, const fdc_image* sheet, const char* options_json, fdc_peers** out);
+/* JSON: {"dpi", "sheetAngleDeg", "labelWidth", "labelHeight" (px), "masterIndex", "notes": [...],
+ * "labels": [{"index", "row", "col", "angleDeg" (moturs 0–360), "corners" (på arket, övre vänster först),
+ * "similarity", "registrationRmsPx", "master", "findings": [{"label", "kind" (Missing, Added, Shape, Color,
+ * Uncertain), "bboxPx", "bboxMm" (i etikettens koordinater), "areaMm2", "deltaL", "detail"}]}]}. */
+FDC_API fdc_status fdc_peers_json(const fdc_peers* p, fdc_buffer** out);
+/* label −1 = konsensus (medianen); annars etiketten inpassad mot förlagan (upprätad, samma storlek). */
+FDC_API fdc_status fdc_peers_image(const fdc_peers* p, int label, fdc_image** out);
+FDC_API void fdc_peers_free(fdc_peers* p);
+
 #ifdef __cplusplus
 }
 #endif

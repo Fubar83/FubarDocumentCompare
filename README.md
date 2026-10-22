@@ -351,6 +351,36 @@ lågfrekvent innehåll i bilden och går inte att filtrera bort utan att även t
 - Vinkeln förfinas per etikett: etiketten rätas upp med de grova hörnen och snedheten mäts igen.
 - Med hörnen ger `WarpQuad` etiketten upprätt i originalets storlek.
 
+### Etiketterna mot varandra (utan original)
+
+Ett scannat ark med flera etiketter kan jämföras utan original: `compare::compare_peers`,
+`fdc_sheet_compare_peers` och `Comparer.CompareLabelsOnSheet`. Fel som bara finns på en etikett
+syns (fläckar, streck, saknad färg); fel som finns på alla etiketter kräver ett original.
+
+1. **Hitta etiketterna** mot bakgrunden. Bakgrundsfärgen tas ur en ram längs kanten (medianen och de
+   två vanligaste färgerna, eftersom ett snett ark lämnar skannerlockets färg i hörnen). För varje
+   färg prövas slutning och erosion; flest lika stora rektanglar vinner. Kanterna förfinas i 150 dpi.
+2. **Leta med en mall:** den etikett som är mest lik de andras storlek rätas upp och letas på hela
+   arket som mot ett original (alla vridningar). Det hittar även etiketter som veckens skugga eller
+   smuts band ihop med grannen. Träffar som täcker en bättre träff räknas bort.
+3. **Förlaga och vridning:** utsnitten i 75 dpi korreleras med varandra; den som liknar de andra mest
+   blir förlaga, och varje etikett vrids 0/180° (90/270° för kvadratiska) dit den liknar förlagan
+   mest. "Rätt upp" är så som de flesta etiketterna ligger.
+4. **Passning** mot förlagan med samma registrering som mot ett original (global och lokal).
+5. **Konsensus:** medianen per pixel av de rasterfria, färganpassade etiketterna. Varje etikett
+   jämförs med medianen (ljushet och ΔE00). Veck blir osäkra zoner. En avvikelse på samma ställe
+   på hälften av etiketterna eller fler (t.ex. variabel data som lotnummer) räknas inte.
+
+Med två etiketter går en skillnad inte att tillskriva den ena; med en finns inget att jämföra.
+
+```csharp
+using var sheet = engine.ImageCodec.Load("ark.tif");
+using var peers = engine.Comparer.CompareLabelsOnSheet(sheet, new PeerOptions { ExpectedCount = 6 });
+foreach (var l in peers.Labels)
+    Console.WriteLine($"#{l.Index} rad {l.Row} kol {l.Col}: {l.AngleDeg:0.0}°, {l.Findings.Count} avvikelser");
+// peers.Consensus och peers.Aligned[i]: konsensus och varje etikett upprätad, i förlagans storlek
+```
+
 **Kedjor** körs i ett anrop: `fdc_image_process` tar operationerna som JSON, och .NET bygger dem med
 `ImageChain`:
 

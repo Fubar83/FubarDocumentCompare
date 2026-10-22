@@ -35,6 +35,19 @@ hittas, och etiketterna färgas efter status (grön, gul, röd) när de analyser
 rader, kolumner eller antal etiketter, eller låta dem vara okända. Knappen "Testdata" väljer
 etiketten i `testdata/label`.
 
+**Mot varandra.** Ett scannat ark med flera etiketter jämförs utan original: etiketterna hittas mot
+bakgrunden, den mest typiska blir förlaga, de andra passas in mot den och var och en jämförs med
+medianen av alla (konsensus).
+
+- "Nytt demoark" skapar ett ark med inställningarna under Demoark, utan fel i originalet men med
+  tryckfel på enskilda etiketter (antalet väljs här). Facit visas under källan.
+- Etiketterna ritas på arket: förlagan blå, övriga gröna, gula eller röda efter antal avvikelser.
+  Vridningen (även upp och ned) och likheten med konsensus står vid varje etikett.
+- Den valda etiketten (upprätad och inpassad) visas ovanför konsensus, med avvikelserna markerade.
+  Veck blir osäkra zoner (lila), inte fel.
+- Fel som finns på alla etiketter syns inte utan original; med två etiketter går en skillnad inte
+  att tillskriva den ena.
+
 **Bildlabb.** En kedja av filter och transformer med förhandsvisning direkt (lägg till, flytta, slå av
 steg och dra i parametrarna). Källan är senaste demoarket, en scan eller en PDF-sida.
 
@@ -66,7 +79,8 @@ Med argumentet körs demot utan fönster (Avalonia headless med Skia) och sparar
 
 ![Demoark](../docs/demo/1-demoark.png)
 ![Egna filer](../docs/demo/2-egna-filer.png)
-![Bildlabb: kanter bara på etiketterna](../docs/demo/3-bildlabb-etiketter.png)
-![Bildlabb: upprätat och tröskel](../docs/demo/4-bildlabb-uppratat.png)
-![PDF](../docs/demo/5-pdf.png)
-![PDF, utstansad](../docs/demo/6-pdf-utstansad.png)
+![Mot varandra: etiketterna jämförda utan original](../docs/demo/3-mot-varandra.png)
+![Bildlabb: kanter bara på etiketterna](../docs/demo/4-bildlabb-etiketter.png)
+![Bildlabb: upprätat och tröskel](../docs/demo/5-bildlabb-uppratat.png)
+![PDF](../docs/demo/6-pdf.png)
+![PDF, utstansad](../docs/demo/7-pdf-utstansad.png)
